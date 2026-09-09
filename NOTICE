@@ -1,0 +1,17 @@
+The MIT license covers raw-webgpu source and shaders; bundled dependencies retain their own licenses.
+
+raw-webgpu includes LibRaw 0.22.2 (CDDL 1.0), Adobe DNG SDK 1.7.1 build 2724,
+libjxl 0.11.2 and its Brotli, Highway and skcms dependencies, JPEG 9f, zlib 1.3.2,
+and the Emscripten 6.0.9 runtime. Copyright remains with their respective authors.
+This software is based in part on the work of the Independent JPEG Group.
+
+Upstream sources and license terms:
+https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+https://www.adobe.com/go/dng_sdk
+https://github.com/libjxl/libjxl/blob/v0.11.2/LICENSE
+https://www.ijg.org/files/README
+https://zlib.net/zlib_license.html
+https://github.com/emscripten-core/emscripten/blob/6.0.9/LICENSE
+
+Complete bundled notices are in THIRD_PARTY_LICENSES.txt.
+Pinned sources and rebuild instructions are in native/build.py.

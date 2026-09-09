@@ -1,0 +1,34 @@
+--- a/dng_sdk/source/dng_jxl.cpp
++++ b/dng_sdk/source/dng_jxl.cpp
+@@ -1536,6 +1536,7 @@
+ 			} // exif
+ 			
+ 		// XMP.
++#if qDNGUseXMP
+ 
+ 		if (includeXMP && metadata && metadata->GetXMP ())
+ 			{
+@@ -1574,6 +1575,7 @@
+ 				}
+ 
+ 			} // xmp
++#endif
+ 
+ 		// IPTC.
+ 
+@@ -3809,6 +3811,7 @@
+ 									 const std::vector<uint8> &data)
+ 	{
+ 	
++	#if qDNGUseXMP
+ 	#if qDNGValidate
+ 
+ 	if (gVerbose)
+@@ -3874,6 +3877,7 @@
+ 
+ 		}
+ 	
++#endif
+ 	}
+ 
+ /*****************************************************************************/

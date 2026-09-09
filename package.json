@@ -1,0 +1,42 @@
+{
+	"name": "raw-webgpu",
+	"version": "0.1.0",
+	"description": "Camera RAW decoding and linear development on WebGPU, with precompiled LibRaw and DNG SDK.",
+	"type": "module",
+	"license": "MIT",
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"native",
+		"README.md",
+		"NOTICE",
+		"LICENSE",
+		"THIRD_PARTY_LICENSES.txt"
+	],
+	"scripts": {
+		"build": "bun run build:native && bun run build:sdk",
+		"build:native": "python3 native/build.py",
+		"check": "biome check --write src build.ts tests",
+		"test": "bun test",
+		"test:gpu": "GPU=1 bun test",
+		"test:browser": "bun tests/browser.ts",
+		"build:sdk": "bun build.ts && tsc --emitDeclarationOnly"
+	},
+	"dependencies": {
+		"@webgpu/types": "^0.1.72"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.11",
+		"@types/bun": "^1.4.1",
+		"typescript": "^7.0.2",
+		"vgpu": "^0.3.1",
+		"@playwright/test": "1.62.1"
+	}
+}
