@@ -4,13 +4,11 @@
   "workspaces": {
     "": {
       "name": "raw-webgpu",
-      "dependencies": {
-        "@webgpu/types": "^0.1.72",
-      },
       "devDependencies": {
         "@biomejs/biome": "2.5.11",
         "@playwright/test": "1.62.1",
         "@types/bun": "^1.4.1",
+        "@webgpu/types": "^0.1.72",
         "typescript": "^7.0.2",
         "vgpu": "^0.3.1",
       },

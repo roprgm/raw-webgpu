@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
 
 const root = resolve(import.meta.dir, "..");
+const dist = process.env.PACKAGE_DIST ?? `${root}/dist`;
 const fixtureRoot = `${root}/tests/fixtures/tiff`;
 const benchmark = process.argv.includes("--benchmark");
 // Benchmarks compare against the sibling OpenLight loader and its larger sample files.
@@ -22,7 +23,7 @@ for (const name of names) {
 	paths.set(`/files/${name}`, `${folder}/${name}`);
 }
 for (const name of ["index.js", "tiff-worker.js", "libraw.js", "libraw.wasm"]) {
-	paths.set(`/dist/${name}`, `${root}/dist/${name}`);
+	paths.set(`/dist/${name}`, `${dist}/${name}`);
 }
 paths.set("/reference.json", `${fixtureRoot}/reference.json`);
 if (compareBefore) {

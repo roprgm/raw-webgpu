@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { chromium, expect } from "@playwright/test";
 
 const root = `${import.meta.dir}/..`;
+const dist = process.env.PACKAGE_DIST ?? join(root, "dist");
 const fixtures = [
 	"bayer.dng",
 	"linear-jxl.dng",
@@ -17,10 +18,10 @@ for (const name of fixtures) {
 	paths.set(`/fixtures/${name}`, join(root, "tests/fixtures", name));
 }
 for (const file of new Bun.Glob("**/*").scanSync({
-	cwd: join(root, "dist"),
+	cwd: dist,
 	onlyFiles: true,
 })) {
-	paths.set(`/dist/${file}`, join(root, "dist", file));
+	paths.set(`/dist/${file}`, join(dist, file));
 }
 if (process.env.RAW_IPHONE_FIXTURES) {
 	for (const [name, path] of Object.entries(

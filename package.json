@@ -1,7 +1,7 @@
 {
 	"name": "raw-webgpu",
-	"version": "0.1.0",
-	"description": "Camera RAW decoding and linear development on WebGPU, with precompiled LibRaw and DNG SDK.",
+	"version": "0.1.0-alpha.1",
+	"description": "Camera RAW, DNG and TIFF decoding with WebGPU development and interactive white balance.",
 	"type": "module",
 	"license": "MIT",
 	"sideEffects": false,
@@ -18,7 +18,8 @@
 		"README.md",
 		"NOTICE",
 		"LICENSE",
-		"THIRD_PARTY_LICENSES.txt"
+		"THIRD_PARTY_LICENSES.txt",
+		"docs"
 	],
 	"scripts": {
 		"build": "bun run build:native && bun run build:sdk",
@@ -29,16 +30,39 @@
 		"test:browser": "bun tests/browser.ts",
 		"build:sdk": "bun build.ts && tsc --emitDeclarationOnly",
 		"test:tiff": "bun tests/tiff.browser.ts",
-		"benchmark:tiff": "bun tests/tiff.browser.ts --benchmark"
-	},
-	"dependencies": {
-		"@webgpu/types": "^0.1.72"
+		"benchmark:tiff": "bun tests/tiff.browser.ts --benchmark",
+		"prepack": "bun run build",
+		"test:package": "bun tests/package.ts",
+		"prepublishOnly": "bunx --no-install biome ci src build.ts tests && bun run test:gpu && bun run test:package"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.11",
 		"@playwright/test": "1.62.1",
 		"@types/bun": "^1.4.1",
 		"typescript": "^7.0.2",
-		"vgpu": "^0.3.1"
+		"vgpu": "^0.3.1",
+		"@webgpu/types": "^0.1.72"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "alpha",
+		"registry": "https://registry.npmjs.org/"
+	},
+	"keywords": [
+		"raw",
+		"dng",
+		"tiff",
+		"webgpu",
+		"libraw",
+		"wasm",
+		"image"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/roprgm/raw-webgpu.git"
+	},
+	"homepage": "https://github.com/roprgm/raw-webgpu#readme",
+	"bugs": {
+		"url": "https://github.com/roprgm/raw-webgpu/issues"
 	}
 }

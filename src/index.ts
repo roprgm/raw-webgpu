@@ -1,5 +1,3 @@
-/// <reference types="@webgpu/types" preserve="true" />
-
 import { compileDecoder } from "./decode/module";
 import { createSession } from "./decode/session";
 import { createGpuSource, createPipeline } from "./develop/gpu";
