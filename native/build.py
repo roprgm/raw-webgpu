@@ -86,10 +86,19 @@ def build_jpeg_xl(em, source, output):
         "-DJPEGXL_BUNDLE_LIBPNG=OFF",
         "-DJPEGXL_ENABLE_SKCMS=ON",
         *[f"-DJPEGXL_ENABLE_{name}=OFF" for name in disabled],
-        "-DCMAKE_CXX_FLAGS=-Oz -flto -fwasm-exceptions",
-        "-DCMAKE_C_FLAGS=-Oz -flto",
+        "-DCMAKE_CXX_FLAGS=-Oz -flto -fwasm-exceptions -msimd128",
+        "-DCMAKE_C_FLAGS=-Oz -flto -msimd128",
     )
-    run("cmake", "--build", output, "--parallel", "6")
+    run(
+        "cmake",
+        "--build",
+        output,
+        "--parallel",
+        "6",
+        "--target",
+        "jxl_dec",
+        "jxl_threads",
+    )
 
 
 def compiler_flags(includes):
@@ -97,11 +106,17 @@ def compiler_flags(includes):
         "-Oz",
         "-flto",
         "-fwasm-exceptions",
+        "-msimd128",
+        "-fno-rtti",
+        "-fvisibility=hidden",
+        "-fwhole-program-vtables",
+        "-fvirtual-function-elimination",
         "-std=c++17",
         "-w",
         "-DLIBRAW_NOTHREADS",
         "-DLIBRAW_NO_IOSTREAMS_DATASTREAM",
         "-DUSE_DNGSDK",
+        "-DUSE_X3FTOOLS",
         "-DUSE_ZLIB",
         "--use-port=zlib",
         "--use-port=libjpeg",
@@ -154,7 +169,7 @@ def link_wasm(em, flags, library, jxl):
         "-sMODULARIZE=1",
         "-sEXPORT_ES6=1",
         "-sENVIRONMENT=web,worker",
-        "-sINCOMING_MODULE_JS_API=wasmBinary,locateFile",
+        "-sINCOMING_MODULE_JS_API=instantiateWasm",
         "-sALLOW_MEMORY_GROWTH=1",
         "-sSTACK_SIZE=1048576",
         "-sMAXIMUM_MEMORY=2147483648",

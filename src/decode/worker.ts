@@ -1,28 +1,31 @@
 import type { RawPixels, RawReply, WhiteBalance } from "../types";
-import createLibRaw from "./libraw.js";
+import { instantiateDecoder } from "./instantiate";
 
-const decoder = fetch(new URL("./libraw.wasm", import.meta.url))
-	.then((response) => {
-		if (!response.ok) {
-			throw Error("Could not load the RAW decoder.");
-		}
-		return response.arrayBuffer();
-	})
-	.then((wasmBinary) => createLibRaw({ wasmBinary }));
+const module = Promise.withResolvers<WebAssembly.Module>();
+const decoder = module.promise.then(instantiateDecoder);
+
+// The worker keeps one open file so later white balance requests skip decoding.
 let source = 0;
 let asShot: WhiteBalance;
 
+type Request = { id: number; value: Blob | WhiteBalance };
+
 self.onmessage = async ({
-	data: { id, value },
-}: MessageEvent<{
-	id: number;
-	value: Blob | WhiteBalance;
-}>) => {
+	data,
+}: MessageEvent<Request | { module: WebAssembly.Module }>) => {
+	if ("module" in data) {
+		module.resolve(data.module);
+		return;
+	}
+	const { id, value } = data;
 	try {
 		const raw = await decoder;
 		let image: RawPixels | undefined;
+		// A zero temperature asks the native side for the exact as-shot white point,
+		// so re-requesting the as-shot values restores the camera neutral without a Kelvin round trip.
 		let temperature = 0;
 		let tint = 0;
+
 		if (value instanceof Blob) {
 			const bytes = new Uint8Array(await value.arrayBuffer());
 			const pointer = raw._malloc(bytes.length);
@@ -31,30 +34,58 @@ self.onmessage = async ({
 			}
 			try {
 				raw.HEAPU8.set(bytes, pointer);
+				if (source) {
+					raw._raw_close(source);
+					source = 0;
+				}
 				source = raw._raw_open(pointer, bytes.length);
 				if (!source) {
 					throw Error(raw.UTF8ToString(raw._raw_error()));
 				}
 				const width = raw._raw_width(source);
 				const height = raw._raw_height(source);
-				const pixels = raw._raw_pixels(source) / 2;
 				const mosaic = Boolean(raw._raw_mosaic(source));
 				const demosaic = raw._raw_cpu_demosaic(source) ? "cpu" : "none";
-				const black = raw._raw_black(source) / 8;
-				const cfa = raw._raw_cfa(source) / 4;
-				const vignette = raw._raw_vignette(source) / 8;
+				// When the file already holds a plain 16-bit mosaic, the samples come straight from it.
+				const originalOffset = raw._raw_original_offset(source);
+
+				// Native pointers are byte offsets; divide by the element size to index a heap view.
+				const floating = Boolean(raw._raw_float(source));
+				const pixelPointer = raw._raw_pixels(source);
+				const Samples = floating ? Float32Array : Uint16Array;
+				const sampleCount = width * height * (mosaic ? 1 : 4);
+				const blackIndex = raw._raw_black(source) / 8;
+				const cfaIndex = raw._raw_cfa(source) / 4;
+				const cfaSize = raw._raw_cfa_size(source);
+				const vignetteIndex = raw._raw_vignette(source) / 8;
+
 				image = {
 					size: [width, height],
+					sampleFormat: floating ? "float32" : "uint16",
+					whiteBalanceOrigin: raw._raw_daylight_balance(source)
+						? "daylight"
+						: "as-shot",
 					demosaic: mosaic ? "gpu" : demosaic,
-					data: raw.HEAPU16.slice(
-						pixels,
-						pixels + width * height * (mosaic ? 1 : 4),
-					),
-					black: Array.from(raw.HEAPF64.subarray(black, black + 4)),
+					data: originalOffset
+						? new Uint16Array(bytes.buffer, originalOffset, width * height)
+						: new Samples(
+								raw.HEAPU8.slice(
+									pixelPointer,
+									pixelPointer + sampleCount * Samples.BYTES_PER_ELEMENT,
+								).buffer,
+							),
+					black: Array.from(raw.HEAPF64.subarray(blackIndex, blackIndex + 4)),
 					white: raw._raw_white(source),
 					flip: raw._raw_flip(source),
-					vignette: Array.from(raw.HEAPF64.subarray(vignette, vignette + 9)),
-					cfa: mosaic ? Array.from(raw.HEAPU32.subarray(cfa, cfa + 4)) : null,
+					vignette: Array.from(
+						raw.HEAPF64.subarray(vignetteIndex, vignetteIndex + 9),
+					),
+					cfaSize,
+					cfa: mosaic
+						? Array.from(
+								raw.HEAPU32.subarray(cfaIndex, cfaIndex + cfaSize * cfaSize),
+							)
+						: null,
 				};
 				asShot = {
 					temperature: raw._raw_temperature(source),
@@ -71,10 +102,12 @@ self.onmessage = async ({
 			temperature = value.temperature;
 			tint = value.tint;
 		}
+
 		const pointer = raw._raw_calibration(source, temperature, tint);
 		if (!pointer) {
 			throw Error(raw.UTF8ToString(raw._raw_error()));
 		}
+		// Three gains, then a row-major 3x3 matrix.
 		const values = raw.HEAPF64.subarray(pointer / 8, pointer / 8 + 12);
 		const reply: RawReply = {
 			image,

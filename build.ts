@@ -1,5 +1,9 @@
 const result = await Bun.build({
-	entrypoints: ["src/index.ts", "src/decode/worker.ts"],
+	entrypoints: [
+		"src/index.ts",
+		"src/decode/worker.ts",
+		"src/decode/tiff-worker.ts",
+	],
 	outdir: "dist",
 	naming: "[name].[ext]",
 	target: "browser",

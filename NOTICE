@@ -15,3 +15,7 @@ https://github.com/emscripten-core/emscripten/blob/6.0.9/LICENSE
 
 Complete bundled notices are in THIRD_PARTY_LICENSES.txt.
 Pinned sources and rebuild instructions are in native/build.py.
+
+TIFF ICC color conversion and GPU orientation code are adapted from OpenLight, under the MIT license.
+
+LibRaw X3F support includes BSD-licensed X3F Tools by Roland Karlsson.

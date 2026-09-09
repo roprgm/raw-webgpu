@@ -1,16 +1,15 @@
 import type { RawReply, WhiteBalance } from "../types";
 
 /** Each source retains one native calibration session in its own worker. */
-export function createSession() {
+export function createSession(compiled: Promise<WebAssembly.Module>) {
 	const worker = new Worker(new URL("./worker.js", import.meta.url), {
 		type: "module",
 	});
-	const pending = new Map<
-		number,
-		ReturnType<typeof Promise.withResolvers<RawReply>>
-	>();
+	const pending = new Map<number, PromiseWithResolvers<RawReply>>();
 	let sequence = 0;
 	let failure: Error | undefined;
+
+	/** Once the worker fails or closes, every pending and future request rejects. */
 	function dispose(error = Error("RAW source is closed.")) {
 		failure = error;
 		worker.terminate();
@@ -19,6 +18,13 @@ export function createSession() {
 		}
 		pending.clear();
 	}
+
+	// The module arrives before any request; message order is guaranteed.
+	compiled.then(
+		(module) => worker.postMessage({ module }),
+		(error) => dispose(error instanceof Error ? error : Error(String(error))),
+	);
+
 	worker.onmessage = ({
 		data,
 	}: MessageEvent<{ id: number } & (RawReply | { error: string })>) => {
@@ -36,7 +42,9 @@ export function createSession() {
 	};
 	worker.onmessageerror = () =>
 		dispose(Error("Could not read the RAW worker response."));
+
 	return {
+		/** A Blob opens a file; a white balance recalibrates the file already open. */
 		request(value: Blob | WhiteBalance) {
 			if (failure) {
 				return Promise.reject(failure);

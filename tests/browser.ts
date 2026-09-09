@@ -10,6 +10,7 @@ const fixtures = [
 	"bayer-grbg.dng",
 	"bayer-gbrg.dng",
 	"bayer-cropped.dng",
+	"corrected.dng",
 ];
 const paths = new Map<string, string>();
 for (const name of fixtures) {
@@ -142,16 +143,22 @@ try {
 			() => false,
 			() => true,
 		);
-		const pending = decoder
-			.load(await (await fetch("/fixtures/bayer.dng")).blob())
-			.then(
-				() => false,
-				() => true,
-			);
+		const bayer = await (await fetch("/fixtures/bayer.dng")).blob();
+		const controller = new AbortController();
+		const abortable = decoder.load(bayer, { signal: controller.signal }).then(
+			() => "resolved",
+			(error: Error) => error.name,
+		);
+		controller.abort();
+		const aborted = (await abortable) === "AbortError";
+		const pending = decoder.load(bayer).then(
+			() => false,
+			() => true,
+		);
 		decoder.dispose();
 		const cancelled = await pending;
 		device.destroy();
-		return { output, bad, cancelled, gpuErrors };
+		return { output, bad, aborted, cancelled, gpuErrors };
 	}, fixtures);
 	await Bun.write(
 		".cache/browser-results.json",
@@ -169,18 +176,29 @@ try {
 				0.401443, 0.265858, 0.14215, 1,
 			].entries()) {
 				expect(
-					Math.abs(result.before[index] - expected),
+					Math.abs(
+						result.before[index] -
+							expected *
+								(result.name === "corrected.dng" && index < 3 ? 0.5 : 1),
+					),
 					result.name,
 				).toBeLessThan(0.002);
 			}
 		}
+		if (result.name === "corrected.dng") {
+			expect(result.format).toBe("rgba32uint");
+			expect(result.demosaic).toBe("cpu");
+			continue;
+		}
 		expect(result.format).toBe(
-			result.name.startsWith("bayer") || result.name === "iphone-xs.dng"
+			result.name.startsWith("bayer") ||
+				result.name === "xtrans.dng" ||
+				result.name === "iphone-xs.dng"
 				? "r16uint"
 				: "rgba16uint",
 		);
 		if (result.name === "xtrans.dng") {
-			expect(result.demosaic).toBe("cpu");
+			expect(result.demosaic).toBe("gpu");
 		}
 	}
 	console.log(JSON.stringify(results, null, 2));

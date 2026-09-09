@@ -1,6 +1,7 @@
 """Generate synthetic RAW fixtures with known camera samples and color values."""
 
 import json
+import struct
 from pathlib import Path
 
 import imagecodecs
@@ -91,6 +92,27 @@ def write_linear_jxl():
         image.write((34892).to_bytes(2, "little"))
 
 
+def write_corrected_dng():
+    # A mandatory stage-2 GainMap halves every sample before demosaic.
+    area = struct.pack(">8I", 0, 0, 96, 128, 0, 1, 1, 1)
+    gain = struct.pack(">2I4dIf", 1, 1, 1, 1, 0, 0, 1, 0.5)
+    opcode = struct.pack(">5I", 1, 9, 0x01030000, 0, len(area + gain)) + area + gain
+    pattern = np.array([[0, 1], [1, 2]], dtype=np.uint8)
+    tags = camera_tags() + [
+        (33421, "H", 2, (2, 2), False),
+        (33422, "B", 4, (0, 1, 1, 2), False),
+        (51009, "B", len(opcode), opcode, False),
+    ]
+    tifffile.imwrite(
+        ROOT / "corrected.dng",
+        CAMERA_SAMPLES[np.tile(pattern, (48, 64))],
+        photometric=32803,
+        rowsperstrip=96,
+        metadata=None,
+        extratags=tags,
+    )
+
+
 def main():
     bayer_patterns = {
         "bayer.dng": [[0, 1], [1, 2]],
@@ -120,6 +142,7 @@ def main():
     # LibRaw's CPU fallback needs an image larger than its demosaic tile.
     write_mosaic("xtrans.dng", xtrans, (100, 100))
     write_linear_jxl()
+    write_corrected_dng()
     expected = CAMERA_TO_REC2020 @ CAMERA_SAMPLES / 65535
     reference = {"width": 96, "height": 128, "expectedRgb": expected.tolist()}
     (ROOT / "reference.json").write_text(json.dumps(reference, indent=2))
