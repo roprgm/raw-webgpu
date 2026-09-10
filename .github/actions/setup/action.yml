@@ -30,5 +30,6 @@ runs:
       run: |
         bunx --no-install playwright install --with-deps chromium
         bunx --no-install vgpu install-software-renderer
-        ldd "$HOME"/.cache/vgpu/software-renderer/*/linux-x64/libvulkan_lvp.so
-        echo "VK_LOADER_DEBUG=error,warn" >> "$GITHUB_ENV"
+        for icd in "$HOME"/.cache/vgpu/software-renderer/*/linux-x64/lvp_icd.json; do
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+        done
