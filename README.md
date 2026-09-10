@@ -15,7 +15,7 @@ LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF stri
 ## Installation
 
 ```sh
-npm install --save-exact raw-webgpu@0.1.0
+npm install --save-exact raw-webgpu@0.1.1
 ```
 
 WASM, workers and types are included; consumers do not compile C++. Use a WebGPU browser with WASM SIMD/exception support and a bundler that handles worker/WASM asset URLs, such as Vite. TypeScript 5.9 and newer are tested; with TypeScript 5.9, install `@webgpu/types` and include it in `compilerOptions.types`.
@@ -45,7 +45,7 @@ destination.destroy();
 decoder.dispose();
 ```
 
-The display options below require a local build until the next npm release. For direct display, create a pass with `{ outputColorSpace: "srgb", format }`, where `format` matches your sRGB canvas configuration, usually `navigator.gpu.getPreferredCanvasFormat()`. Render to `context.getCurrentTexture()` with the canvas dimensions set to `source.size`. No app shader is needed.
+For direct display, create a pass with `{ outputColorSpace: "srgb", format }`, where `format` matches your sRGB canvas configuration, usually `navigator.gpu.getPreferredCanvasFormat()`. Render to `context.getCurrentTexture()` with the canvas dimensions set to `source.size`. No app shader is needed.
 
 The default is `{ outputColorSpace: "linear-rec2020", format: "rgba16float" }`. Supported formats are `rgba16float`, `rgba8unorm` and `bgra8unorm`. sRGB output converts primaries, clips to [0, 1] and applies the sRGB transfer function on GPU; it does not add a photographic tone curve. Do not apply sRGB encoding again.
 
