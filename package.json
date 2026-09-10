@@ -1,6 +1,6 @@
 {
 	"name": "raw-webgpu",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Camera RAW, DNG and TIFF decoding with WebGPU development and interactive white balance.",
 	"type": "module",
 	"license": "MIT",
