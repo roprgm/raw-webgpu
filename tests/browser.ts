@@ -47,7 +47,13 @@ const server = Bun.serve({
 			: new Response("Not found", { status: 404 });
 	},
 });
-const browser = await chromium.launch({ channel: "chromium" });
+const browser = await chromium.launch({
+	channel: "chromium",
+	args:
+		process.platform === "linux"
+			? ["--enable-unsafe-webgpu", "--use-webgpu-adapter=swiftshader"]
+			: [],
+});
 try {
 	const page = await browser.newPage();
 	const errors: string[] = [];

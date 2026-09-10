@@ -2,7 +2,7 @@
 
 Load camera RAW, DNG and TIFF files into WebGPU textures. Develop into linear Rec.2020 `rgba16float`, with adjustable white balance and exposure.
 
-LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. WebGPU handles supported demosaic and color processing. Supply your own `GPUDevice`; no rendering framework or runtime dependencies are required.
+LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF strips use original file bytes or browser Deflate; complex layouts retain the SDK fallback. WebGPU handles supported demosaic and color processing. Supply your own `GPUDevice`; no rendering framework or runtime dependencies are required.
 
 ## Features
 
@@ -14,10 +14,8 @@ LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. WebGPU handles s
 
 ## Installation
 
-`0.1.0-alpha.1` is prepared but not published yet. Once available:
-
 ```sh
-npm install --save-exact raw-webgpu@0.1.0-alpha.1
+npm install --save-exact raw-webgpu@0.1.0-alpha.2
 ```
 
 WASM, workers and types are included; consumers do not compile C++. Use a WebGPU browser with WASM SIMD/exception support and a bundler that handles worker/WASM asset URLs, such as Vite. Older TypeScript versions may need `@webgpu/types` in `compilerOptions.types`.
@@ -65,27 +63,31 @@ For file export, see the [Bun PNG/JPEG/BMP conversion example](docs/conversion.m
 
 ## Limitations and planned work
 
-**X-Trans detail needs improvement.** Its current fixed-weight interpolation softens fine textures compared with the previous LibRaw Markesteijn algorithm. Replace it with higher-quality GPU reconstruction and compare detail, aliasing and WB performance against the retained reference images. This is an algorithm trade-off, not a GPU limitation. The camera-RGB cache keeps WB edits fast but adds about 128 MB for a 16 MP image, alongside the 32 MB mosaic. Revisit that cache if a new algorithm depends on WB.
+**X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB: nearby samples provide an initial estimate, then interpolated R−G and B−G differences recover detail. White balance is applied after this fixed reconstruction; it is not equivalent to running a WB-dependent demosaic again. Further work should improve directional edges and aliasing against the retained LibRaw Markesteijn references.
+
+The camera-RGB cache keeps WB edits fast. A 16 MP image retains about 128 MB of RGB plus the 32 MB mosaic; reconstruction temporarily needs another 128 MB texture. That temporary texture is released after submission.
 
 RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
 
-TIFF passes 17 of 21 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported ICC profiles fall back to sRGB. Images must fit the GPU's texture limits.
+TIFF passes 20 of 24 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported ICC profiles fall back to sRGB. Images must fit the GPU's texture limits.
 
 ## Benchmark
 
-All 30 camera samples converted in Chromium and Bun. Selected results on Apple M4 Pro with Chromium 151, measured September 9, 2026:
+All 30 camera samples converted in Chromium and Bun. Selected results on Apple M4 Pro with Chromium 151, measured September 9, 2026; Fuji results updated September 10:
 
 | Camera | Load | WB GPU update |
 | --- | ---: | ---: |
 | Nikon D800 | 397 ms | Not measured |
 | Sony A7R II | 365 ms | Not measured |
-| Fuji X-Pro1 | 240 ms | 0.9 ms |
-| Fuji X-T10 | 211 ms | 1.7 ms |
+| Fuji X-Pro1 | 267 ms | 0.8 ms |
+| Fuji X-T10 | 232 ms | 0.9 ms |
 | Nokia Lumia 1020 | 1,719 ms | Not measured |
 
-Loading is the median of three runs after one warmup, from an in-memory file through decoding, upload and GPU completion. Disk reads and export encoding are excluded. WB timings measure the GPU stage over ten edits after two warmups. X-Trans uses the simpler demosaic described above; these numbers do not guarantee application frame rates.
+Loading is the median of three runs after one warmup, from an in-memory file through decoding, upload and GPU completion. Disk reads and export encoding are excluded. WB timings measure the GPU stage over ten edits after two warmups. These numbers do not guarantee application frame rates. The X-Trans refinement reduced mean absolute RGB error against the retained LibRaw exports from 3.59 to 2.15 levels for X-Pro1 and from 3.77 to 2.30 for X-T10 on an 8-bit scale. Those exports are comparison references, not ground truth.
 
-WASM is 1.81 MB, or about 570 KB with Brotli. Full measurements and downloaded files remain in the local ignored `.cache/` directory.
+On the same machine, TIFF loading improved from 437 to 321 ms for a 14.6 MP Deflate image, from 59 to 49 ms for a 19 MP uncompressed RGB16 image, and from 546 to 443 ms for a 19 MP Deflate image with horizontal prediction. Medians exclude one warmup and include GPU completion. The TIFF changes preserved the checked pixels across all 30 RAW samples, with no sustained RAW loading regression observed.
+
+WASM is 1.82 MB, or about 570 KB with Brotli. Full measurements and downloaded files remain in the local ignored `.cache/` directory.
 
 ## Development
 
@@ -101,14 +103,11 @@ The native build downloads checksum-pinned dependencies and caches objects in `.
 
 `test:package` builds a tarball, installs it in a temporary project, checks types and runs RAW/TIFF tests in Chromium with WebGPU. `bun run test:gpu` checks shader pixels; `bun run check` formats and lints.
 
-To publish with an authorized npm account and the same build toolchain:
+Publishing runs in GitHub Actions. Merge the version change into `main`, then publish a GitHub prerelease with the matching tag, such as `v0.1.0-alpha.2`. The workflow verifies the tag and commit, installs Emscripten, and runs the package checks before publishing to npm's `alpha` channel. Local publishing is not required.
 
-```sh
-npm publish --dry-run
-npm publish --tag alpha --access public
-```
+Configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) once for owner `roprgm`, repository `raw-webgpu`, workflow `publish.yml`, with publishing allowed and no environment name. No npm token secret is needed; npm attaches provenance automatically.
 
-`prepack` rebuilds the package; `prepublishOnly` checks formatting, GPU tests and the installed tarball. Keep the prerelease version and `alpha` tag until a stable release is ready.
+`prepack` rebuilds the package; `prepublishOnly` checks formatting, GPU tests and the installed tarball. Linux browser tests use SwiftShader, and the release job uses vgpu's software renderer for shader tests. Performance measurements should still use real hardware.
 
 ## License
 

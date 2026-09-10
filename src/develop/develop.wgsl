@@ -131,6 +131,41 @@ fn demosaicPattern(p: vec2i, size: vec2i) -> vec3f {
 
 @group(0) @binding(5) var cameraSource: texture_2d<f32>;
 
+// Refine a neutral camera-RGB estimate by interpolating color differences.
+// The denser green samples carry detail into red and blue without repeating
+// this reconstruction when white balance changes.
+@fragment fn fs_refine(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let size = vec2i(textureDimensions(source));
+  var p = vec2i(position.xy);
+  if ((sensor.flip & 4u) != 0u) { p = p.yx; }
+  if ((sensor.flip & 2u) != 0u) { p.y = size.y - 1 - p.y; }
+  if ((sensor.flip & 1u) != 0u) { p.x = size.x - 1 - p.x; }
+  let center = textureLoad(cameraSource, vec2i(position.xy), 0).rgb;
+  var difference = vec3f(0.0);
+  var weight = vec3f(0.0);
+  for (var y = -3; y <= 3; y++) {
+    for (var x = -3; x <= 3; x++) {
+      let q = p + vec2i(x, y);
+      if (any(q < vec2i(0)) || any(q >= size)) { continue; }
+      let c = channel(q);
+      if (c != 0u && c != 2u) { continue; }
+      var oriented = q;
+      if ((sensor.flip & 1u) != 0u) { oriented.x = size.x - 1 - oriented.x; }
+      if ((sensor.flip & 2u) != 0u) { oriented.y = size.y - 1 - oriented.y; }
+      if ((sensor.flip & 4u) != 0u) { oriented = oriented.yx; }
+      let rgb = textureLoad(cameraSource, oriented, 0).rgb;
+      let distance2 = f32(max(x * x + y * y, 1));
+      let w = 1.0 / (distance2 * distance2);
+      difference[c] += (rgb[c] - rgb.g) * w;
+      weight[c] += w;
+    }
+  }
+  var color = center.g + difference / max(weight, vec3f(0.00001));
+  let c = channel(p);
+  color[select(c, 1u, c == 3u)] = center[select(c, 1u, c == 3u)];
+  return vec4f(calibration.matrix * color * calibration.exposure, 1.0);
+}
+
 // Cached X-Trans camera RGB: subsequent edits only apply per-pixel linear transforms.
 @fragment fn fs_camera(@builtin(position) position: vec4f) -> @location(0) vec4f {
   let camera = textureLoad(cameraSource, vec2i(position.xy), 0).rgb;

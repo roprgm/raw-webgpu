@@ -32,11 +32,14 @@ export type LibRaw = {
 	_raw_close(source: number): void;
 
 	// native/tiff.cpp
-	_tiff_open(pointer: number, size: number): number;
+	tiffBytes?: Uint8Array;
+	_tiff_open(size: number, browserDeflate: boolean): number;
 	_tiff_error(): number;
 	_tiff_metadata(source: number): number;
-	_tiff_original_offset(source: number): number;
 	_tiff_big_endian(source: number): number;
+	_tiff_strips(source: number): number;
+	_tiff_strip_count(source: number): number;
+	_tiff_predict(source: number, pointer: number): void;
 	_tiff_pixels(source: number): number;
 	_tiff_profile(source: number): number;
 	_tiff_profile_size(source: number): number;

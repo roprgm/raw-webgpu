@@ -11,11 +11,12 @@ export async function createPipeline(device: GPUDevice) {
 			primitive: { topology: "triangle-list" },
 		});
 	}
-	const [sensor, camera] = await Promise.all([
+	const [sensor, camera, refine] = await Promise.all([
 		create("fs_main"),
 		create("fs_camera"),
+		create("fs_refine"),
 	]);
-	return { sensor, camera };
+	return { sensor, camera, refine };
 }
 
 function createUniform(device: GPUDevice, data: ArrayBuffer) {
@@ -212,8 +213,8 @@ export function createGpuSource(
 			{ binding: 4, resource: { buffer: patternBuffer } },
 		];
 		if (mosaic && (metadata.cfaSize ?? 2) > 2) {
-			// This interpolation treats each color independently, so WB commutes with demosaic.
-			// Cache camera RGB once; retain the original mosaic for sensor-level consumers.
+			// Reconstruct neutral camera RGB once; WB edits use the completed cache.
+			// Retain the original mosaic for sensor-level consumers.
 			cameraTexture = device.createTexture({
 				size,
 				format: "rgba16float",
@@ -229,6 +230,31 @@ export function createGpuSource(
 				},
 			});
 			prepare.dispose();
+			const estimate = cameraTexture;
+			try {
+				cameraTexture = device.createTexture({
+					size,
+					format: "rgba16float",
+					usage:
+						GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+				});
+				const refine = createPass(pipeline.refine, [
+					{ binding: 0, resource: texture.createView() },
+					{ binding: 1, resource: { buffer: sensor } },
+					{ binding: 4, resource: { buffer: patternBuffer } },
+					{ binding: 5, resource: estimate.createView() },
+				]);
+				refine.render({
+					destination: cameraTexture,
+					calibration: {
+						gains: [1, 1, 1],
+						matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+					},
+				});
+				refine.dispose();
+			} finally {
+				estimate.destroy();
+			}
 		}
 
 		return {
