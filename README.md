@@ -79,77 +79,75 @@ Tested with Chromium on macOS and Linux CI with software rendering. Safari, Fire
 - A decoder owns its sources, each source owns its passes and worker, and the caller owns destination textures. Disposal is idempotent. Device loss closes the decoder; create another decoder with a new device. Pending loads and calibration requests reject when their owner closes.
 - Abort signals cover loading only, including pending GPU setup. Cancellation rejects with the signal's reason. Invalid or unsupported files reject with an `Error`; message text is diagnostic, not a stable error code.
 
-The API contract applies to 0.1.x. Release tests check shader pixels, worker lifecycles and the installed npm package. All 30 files in the local camera corpus converted successfully; this does not establish support for every camera.
+The API contract applies to 0.1.x. See the benchmark below for tested camera samples; support can vary with compression mode and camera settings.
 
 ## Limitations and planned work
 
-**X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB using nearby samples and color differences. This recovers less fine detail than the LibRaw Markesteijn references; directional edges and aliasing need further GPU work. White balance is applied to the cached reconstruction, rather than rerunning a WB-dependent demosaic.
+**X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB using nearby samples and color differences. This recovers less fine detail than LibRaw's Markesteijn demosaic; directional edges and aliasing need further GPU work. White balance is applied to the cached reconstruction, rather than rerunning a WB-dependent demosaic.
 
 The camera-RGB cache keeps WB edits fast. A 16 MP image retains about 128 MB of RGB plus the 32 MB mosaic; reconstruction temporarily needs another 128 MB texture. That temporary texture is released after submission.
 
 RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental and can have visible color casts. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
 
-TIFF passes 20 of 24 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
+TIFF bilevel, palette, float64 and YCbCr JPEG layouts are not supported. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
 
 ## Benchmark
 
-Published **raw-webgpu 0.1.1** vs [libraw-wasm 1.6.0](https://github.com/ybouane/LibRaw-Wasm), measured September 10, 2026 on Apple M4 Pro, macOS, Chromium 151 with hardware WebGPU. Cross-origin isolation was enabled for LibRaw's worker threads. The table covers all 30 downloaded models from [rawsamples.ch](https://rawsamples.ch/index.php/en/), ten additional mirrorless cameras from [raw.pixls.us](https://raw.pixls.us/), and a local iPhone ProRAW file. Recent mirrorless models appear first; this is not a sales ranking.
+Published **raw-webgpu 0.1.1** vs [libraw-wasm 1.6.0](https://github.com/ybouane/LibRaw-Wasm), measured September 10, 2026 on Apple M4 Pro, macOS, Chromium 151 with hardware WebGPU. Cross-origin isolation was enabled for LibRaw's worker threads. The table covers 30 camera models from [rawsamples.ch](https://rawsamples.ch/index.php/en/), ten additional mirrorless cameras from [raw.pixls.us](https://raw.pixls.us/), and an iPhone ProRAW file.
 
 Times are in milliseconds. MP is output megapixels; MB is input file size in decimal megabytes. The target is a full-resolution sRGB RGBA8 texture on the GPU. raw-webgpu completed all 41 files without reported GPU errors; libraw-wasm produced RGB output for 39. Dimensions matched for all 39 shared successes. Completion does not establish color or demosaic quality.
 
-| Camera | File | MP | MB | raw-webgpu | LibRaw q3 | LibRaw q0 | WB update¹ |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Sony A7 III | ARW | 24.2 | 25.6 | 162 | 801 | 405 | 3.4 |
-| Sony A7 IV | ARW | 32.9 | 40.7 | 229 | 1,043 | 552 | 4.6 |
-| Sony A6400 | ARW | 24.2 | 25.1 | 158 | 759 | 411 | 3.4 |
-| Canon EOS R5 | CR3 | 44.7 | 40.6 | 523 | 1,659 | 958 | 5.9 |
-| Canon EOS R6 | CR3 | 20.2 | 22.9 | 226 | 726 | 426 | 2.8 |
-| Canon EOS R6 Mark II | CR3 | 24.2 | 29.4 | 286 | 889 | 501 | 3.6 |
-| Nikon Z6 | NEF | 24.5 | 30.2 | 254 | 1,036 | 667 | 3.4 |
-| Nikon Z8 | NEF | 45.7 | 60.8 | 548 | 1,954 | 1,225 | 6.1 |
-| Fujifilm X-T5 | RAF | 40.1 | 43.1 | 1,844 | 13,908 | 1,876 | 1.2 |
-| Fujifilm X100VI | RAF | 40.1 | 49.4 | 1,805 | 14,282 | 2,158 | 1.2 |
-| iPhone ProRAW | DNG | 12.2 | 11.6 | 833 | No output | No output | 1.7 |
-| Canon EOS 5D Mark III | CR2 | 22.4 | 38.1 | 505 | 1,116 | 676 | 3.3 |
-| Canon EOS 5DS | CR2 | 51.2 | 67.1 | 953 | 2,435 | 1,615 | 7.1 |
-| Canon EOS 10D | CRW | 6.3 | 6.4 | 84 | 256 | 157 | 4.6 |
-| Nikon D800 | NEF | 36.3 | 43.3 | 423 | 1,564 | 1,045 | 5.1 |
-| Nikon D750 | NEF | 24.3 | 22.3 | 269 | 1,048 | 671 | 3.6 |
-| Nikon D70 | NEF | 6.1 | 5.5 | 74 | 284 | 191 | 2.0 |
-| Sony Alpha 7R II | ARW | 42.4 | 43.0 | 371 | 1,519 | 888 | 6.0 |
-| Sony RX100 | ARW | 20.2 | 20.9 | 150 | 659 | 348 | 5.5 |
-| Sony Alpha 100 | ARW | 10.1 | 9.1 | 132 | 407 | 247 | 2.8 |
-| Fujifilm X-Pro1 | RAF | 16.3 | 26.1 | 326 | 5,518 | 325 | 0.8 |
-| Fujifilm X-T10 | RAF | 16.3 | 33.8 | 329 | 5,677 | 256 | 0.9 |
-| Fujifilm S5 Pro | RAF | 6.1 | 25.7 | 193 | 388 | 197 | 0.7 |
-| Olympus E-M1 | ORF | 16.1 | 16.4 | 452 | 793 | 534 | 3.5 |
-| Olympus E-1 | ORF | 5.2 | 10.7 | 35 | 164 | 82 | 1.7 |
-| Panasonic GH4 | RW2 | 16.1 | 19.9 | 140 | 623 | 364 | 3.2 |
-| Panasonic FZ8 | RAW | 7.2 | 11.6 | 63 | 263 | 147 | 2.1 |
-| Pentax K-3 II | PEF | 24.4 | 33.2 | 383 | 1,046 | 642 | 6.7 |
-| Pentax K-50 | DNG | 16.2 | 14.4 | 264 | 690 | 435 | 2.8 |
-| Leica M Typ 240 | DNG | 23.9 | 28.1 | 312 | 1,021 | 630 | 3.6 |
-| Samsung NX500 | SRW | 28.2 | 46.3 | 366 | 1,073 | 612 | 4.0 |
-| Sigma DP2 Quattro | X3F | 19.7 | 57.7 | 1,031 | No output | No output | 1.3 |
-| Kodak DCS Pro | DCR | 13.6 | 14.1 | 167 | 544 | 329 | 2.5 |
-| Hasselblad H3DII-39 | 3FR | 39.5 | 55.0 | 744 | 1,536 | 879 | 7.4 |
-| Mamiya ZD | MEF | 21.5 | 36.6 | 158 | 887 | 534 | 3.6 |
-| Minolta Dynax 7D | MRW | 6.1 | 9.2 | 48 | 214 | 120 | 1.8 |
-| Ricoh GR | DNG | 10.4 | 11.3 | 234 | 514 | 351 | 1.7 |
-| Epson R-D1 | ERF | 6.2 | 10.0 | 52 | 217 | 127 | 1.6 |
-| Leaf Aptus 22 | MOS | 21.4 | 43.4 | 147 | 749 | 391 | 3.2 |
-| OnePlus One | DNG | 13.1 | 17.2 | 485 | 495 | 284 | 1.9 |
-| Nokia Lumia 1020 | DNG | 38.3 | 49.7 | 2,384 | 1,429 | 805 | 2.5 |
+| Camera | File | MP | MB | raw-webgpu | LibRaw q3 | LibRaw q0 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Sony A7 III | ARW | 24.2 | 25.6 | 162 | 801 | 405 |
+| Sony A7 IV | ARW | 32.9 | 40.7 | 229 | 1,043 | 552 |
+| Sony A6400 | ARW | 24.2 | 25.1 | 158 | 759 | 411 |
+| Canon EOS R5 | CR3 | 44.7 | 40.6 | 523 | 1,659 | 958 |
+| Canon EOS R6 | CR3 | 20.2 | 22.9 | 226 | 726 | 426 |
+| Canon EOS R6 Mark II | CR3 | 24.2 | 29.4 | 286 | 889 | 501 |
+| Nikon Z6 | NEF | 24.5 | 30.2 | 254 | 1,036 | 667 |
+| Nikon Z8 | NEF | 45.7 | 60.8 | 548 | 1,954 | 1,225 |
+| Fujifilm X-T5 | RAF | 40.1 | 43.1 | 1,844 | 13,908 | 1,876 |
+| Fujifilm X100VI | RAF | 40.1 | 49.4 | 1,805 | 14,282 | 2,158 |
+| iPhone ProRAW | DNG | 12.2 | 11.6 | 833 | No output | No output |
+| Canon EOS 5D Mark III | CR2 | 22.4 | 38.1 | 505 | 1,116 | 676 |
+| Canon EOS 5DS | CR2 | 51.2 | 67.1 | 953 | 2,435 | 1,615 |
+| Canon EOS 10D | CRW | 6.3 | 6.4 | 84 | 256 | 157 |
+| Nikon D800 | NEF | 36.3 | 43.3 | 423 | 1,564 | 1,045 |
+| Nikon D750 | NEF | 24.3 | 22.3 | 269 | 1,048 | 671 |
+| Nikon D70 | NEF | 6.1 | 5.5 | 74 | 284 | 191 |
+| Sony Alpha 7R II | ARW | 42.4 | 43.0 | 371 | 1,519 | 888 |
+| Sony RX100 | ARW | 20.2 | 20.9 | 150 | 659 | 348 |
+| Sony Alpha 100 | ARW | 10.1 | 9.1 | 132 | 407 | 247 |
+| Fujifilm X-Pro1 | RAF | 16.3 | 26.1 | 326 | 5,518 | 325 |
+| Fujifilm X-T10 | RAF | 16.3 | 33.8 | 329 | 5,677 | 256 |
+| Fujifilm S5 Pro | RAF | 6.1 | 25.7 | 193 | 388 | 197 |
+| Olympus E-M1 | ORF | 16.1 | 16.4 | 452 | 793 | 534 |
+| Olympus E-1 | ORF | 5.2 | 10.7 | 35 | 164 | 82 |
+| Panasonic GH4 | RW2 | 16.1 | 19.9 | 140 | 623 | 364 |
+| Panasonic FZ8 | RAW | 7.2 | 11.6 | 63 | 263 | 147 |
+| Pentax K-3 II | PEF | 24.4 | 33.2 | 383 | 1,046 | 642 |
+| Pentax K-50 | DNG | 16.2 | 14.4 | 264 | 690 | 435 |
+| Leica M Typ 240 | DNG | 23.9 | 28.1 | 312 | 1,021 | 630 |
+| Samsung NX500 | SRW | 28.2 | 46.3 | 366 | 1,073 | 612 |
+| Sigma DP2 Quattro | X3F | 19.7 | 57.7 | 1,031 | No output | No output |
+| Kodak DCS Pro | DCR | 13.6 | 14.1 | 167 | 544 | 329 |
+| Hasselblad H3DII-39 | 3FR | 39.5 | 55.0 | 744 | 1,536 | 879 |
+| Mamiya ZD | MEF | 21.5 | 36.6 | 158 | 887 | 534 |
+| Minolta Dynax 7D | MRW | 6.1 | 9.2 | 48 | 214 | 120 |
+| Ricoh GR | DNG | 10.4 | 11.3 | 234 | 514 | 351 |
+| Epson R-D1 | ERF | 6.2 | 10.0 | 52 | 217 | 127 |
+| Leaf Aptus 22 | MOS | 21.4 | 43.4 | 147 | 749 | 391 |
+| OnePlus One | DNG | 13.1 | 17.2 | 485 | 495 | 284 |
+| Nokia Lumia 1020 | DNG | 38.3 | 49.7 | 2,384 | 1,429 | 805 |
 
 Loading includes decoding, development, CPU-to-GPU transfer and GPU completion. Values are medians of three measured runs after one warmup per file and mode, with alternating execution order. File reads/downloads, initial module setup, canvas presentation and export encoding are excluded. LibRaw timings include RGB-to-RGBA packing and `writeTexture`; raw-webgpu uses `createDevelopPass({ outputColorSpace: "srgb", format: "rgba8unorm" })`.
 
 LibRaw uses camera WB, no auto-brightening, 8-bit sRGB output and `gamm: [1 / 2.4, 12.92]`. **q3** is its standard quality setting; **q0** selects fast interpolation. Demosaic, calibration and highlight handling differ, so this compares loading workflows, not identical pixels or equal image quality. In particular, raw-webgpu's X-Trans reconstruction retains less fine detail than the higher-quality LibRaw reference.
 
-¹ WB update measures raw-webgpu's calibration request, rendering and GPU completion on an already loaded source, with no decoding or upload. Each run measures five temperature/tint edits after two warmups; the table reports the median of the three run medians. These are full-resolution timings, not guaranteed application frame rates.
-
 The comparison has exceptions: LibRaw q0 matches or beats raw-webgpu on the X-Pro1 and X-T10, and both LibRaw settings beat it on the Lumia 1020. Those results held in a separate repeat run. LibRaw q0 also beats raw-webgpu on the OnePlus One. “No output” means this package version's `imageData()` returned no RGB data for that sample, confirmed in the repeat run; it is not a claim that upstream LibRaw cannot support the camera. Sigma color remains experimental in raw-webgpu.
 
-Scripts, inputs and measurements are retained locally in the ignored `.cache/readme-benchmark/` and `.cache/rawsamples-30/` directories. WASM is 1.82 MB, or about 570 KB with Brotli.
+WASM is 1.82 MB, or about 570 KB with Brotli.
 
 ## Development
 
@@ -161,7 +159,7 @@ bun run build
 bun run test:package
 ```
 
-The native build downloads checksum-pinned dependencies and caches objects in `.cache/native`. Use `bun run build:sdk` for TypeScript-only changes. `dist/` and downloaded camera files stay outside Git. For local development, run `bun link` here and `bun link raw-webgpu` in the consuming app.
+The native build downloads checksum-verified dependencies and reuses compiled objects. Use `bun run build:sdk` for TypeScript-only changes. To test changes in another app, run `bun link` here and `bun link raw-webgpu` in that app.
 
 `test:package` builds a tarball, installs it in a temporary project, checks types and runs RAW/TIFF tests in Chromium with WebGPU. `bun run test:gpu` checks shader pixels; `bun run check` formats and lints.
 
@@ -173,11 +171,7 @@ bun install
 bun run dev
 ```
 
-The demo uses the published npm package. Build with `bun run build`; deploy `web/dist/` over HTTPS. On Vercel, use `web` as the root directory. With the server running, `bun run test:web` from the repository root checks the prompt, invalid files and RAW loading.
-
-### Publishing
-
-Merge the version change into `main`, then publish a GitHub Release with the matching `vX.Y.Z` tag. GitHub Actions builds and tests the package before publishing to npm with trusted publishing and provenance. Stable releases use `latest`; `-alpha.N` prereleases use `alpha`.
+The demo uses the published npm package. Build with `bun run build`; deploy `web/dist/` over HTTPS. With the server running, `bun run test:web` from the repository root checks the prompt, invalid files and RAW loading.
 
 ## License
 
