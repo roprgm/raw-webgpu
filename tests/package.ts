@@ -17,6 +17,7 @@ await Bun.write(
 		private: true,
 		type: "module",
 		dependencies: { [name]: `file:${tarball}` },
+		devDependencies: { typescript: "5.9.3", "@webgpu/types": "0.1.72" },
 	}),
 );
 await $`bun install --ignore-scripts`.cwd(consumer);
@@ -47,12 +48,12 @@ await Bun.write(
 			moduleResolution: "bundler",
 			strict: true,
 			noEmit: true,
-			types: [],
+			types: ["@webgpu/types"],
 		},
 		include: ["index.ts"],
 	}),
 );
-await $`${join(root, "node_modules/.bin/tsc")} -p ${consumer}`;
+await $`${join(consumer, "node_modules/.bin/tsc")} -p ${consumer}`;
 const dist = join(consumer, "node_modules/raw-webgpu/dist");
 for (const test of ["tests/browser.ts", "tests/tiff.browser.ts"]) {
 	await $`bun ${test}`.cwd(root).env({ ...process.env, PACKAGE_DIST: dist });

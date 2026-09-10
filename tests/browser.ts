@@ -48,7 +48,7 @@ const server = Bun.serve({
 	},
 });
 const browser = await chromium.launch({
-	channel: "chromium",
+	channel: process.env.BROWSER_CHANNEL ?? "chromium",
 	args:
 		process.platform === "linux"
 			? ["--enable-unsafe-webgpu", "--use-webgpu-adapter=swiftshader"]
@@ -78,6 +78,32 @@ try {
 		device.addEventListener("uncapturederror", (e) =>
 			gpuErrors.push(e.error.message),
 		);
+		const resources = new Set<{ destroy(): void }>();
+		function track<T extends { destroy(): void }>(resource: T) {
+			resources.add(resource);
+			const destroy = resource.destroy.bind(resource);
+			resource.destroy = () => {
+				resources.delete(resource);
+				destroy();
+			};
+			return resource;
+		}
+		const createTexture = device.createTexture.bind(device);
+		const createBuffer = device.createBuffer.bind(device);
+		device.createTexture = (options) => track(createTexture(options));
+		device.createBuffer = (options) => track(createBuffer(options));
+		const workers = new Set<Worker>();
+		const NativeWorker = Worker;
+		globalThis.Worker = class extends NativeWorker {
+			constructor(...args: ConstructorParameters<typeof Worker>) {
+				super(...args);
+				workers.add(this);
+			}
+			terminate() {
+				workers.delete(this);
+				super.terminate();
+			}
+		};
 		const decoder = createRawDecoder(device);
 		function half(h: number) {
 			const sign = h & 32768 ? -1 : 1,
@@ -158,14 +184,82 @@ try {
 		);
 		controller.abort();
 		const aborted = (await abortable) === "AbortError";
+		// Independent sources and an abort after loading must not invalidate each other.
+		const loadedController = new AbortController();
+		const [first, second] = await Promise.all([
+			decoder.load(bayer, { signal: loadedController.signal }),
+			decoder.load(bayer),
+		]);
+		loadedController.abort();
+		const [changed, unchanged] = await Promise.all([
+			first.calibrate({ temperature: 4000, tint: 20 }),
+			second.calibrate(),
+		]);
+		const independent =
+			JSON.stringify(unchanged) === JSON.stringify(second.calibration) &&
+			JSON.stringify(changed) !== JSON.stringify(unchanged);
+		const calibrating = first.calibrate().then(
+			() => false,
+			() => true,
+		);
+		first.dispose();
+		const closedCalibration = await calibrating;
+		await second.calibrate();
 		const pending = decoder.load(bayer).then(
 			() => false,
 			() => true,
 		);
 		decoder.dispose();
 		const cancelled = await pending;
+		const cleaned = resources.size === 0 && workers.size === 0;
+		const afterDispose = await decoder.load(bayer).then(
+			() => false,
+			() => true,
+		);
+		const limitedDevice = await (
+			await navigator.gpu.requestAdapter()
+		)?.requestDevice();
+		if (!limitedDevice) {
+			throw Error("No device for limit checks");
+		}
+		// Simulate a lower advertised limit; this is not a physical low-memory device.
+		Object.defineProperty(limitedDevice.limits, "maxTextureDimension2D", {
+			value: 64,
+		});
+		const limitedDecoder = createRawDecoder(limitedDevice);
+		const sizeLimit = await limitedDecoder.load(bayer).then(
+			(source) => {
+				source.dispose();
+				return false;
+			},
+			(error: Error) => error.message.includes("texture size limit"),
+		);
+		limitedDecoder.dispose();
+		limitedDevice.destroy();
+		const lostDecoder = createRawDecoder(device);
+		await lostDecoder.load(bayer);
+		const lostPending = lostDecoder.load(bayer).then(
+			() => false,
+			() => true,
+		);
 		device.destroy();
-		return { output, bad, aborted, cancelled, gpuErrors };
+		await device.lost;
+		const deviceLost = await lostPending;
+		const lostCleaned = resources.size === 0 && workers.size === 0;
+		return {
+			output,
+			bad,
+			aborted,
+			cancelled,
+			independent,
+			closedCalibration,
+			afterDispose,
+			cleaned,
+			deviceLost,
+			lostCleaned,
+			sizeLimit,
+			gpuErrors,
+		};
 	}, fixtures);
 	await Bun.write(
 		".cache/browser-results.json",
@@ -175,6 +269,18 @@ try {
 	expect(errors).toEqual([]);
 	expect(results.bad).toBe(true);
 	expect(results.cancelled).toBe(true);
+	expect(results.aborted).toBe(true);
+	for (const name of [
+		"independent",
+		"closedCalibration",
+		"afterDispose",
+		"cleaned",
+		"deviceLost",
+		"lostCleaned",
+		"sizeLimit",
+	] as const) {
+		expect(results[name], name).toBe(true);
+	}
 	for (const result of results.output) {
 		expect(result.restored).toEqual(result.before);
 		expect(result.edited).not.toEqual(result.before);

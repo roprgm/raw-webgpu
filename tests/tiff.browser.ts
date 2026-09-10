@@ -77,7 +77,7 @@ const server = Bun.serve({
 	},
 });
 const browser = await chromium.launch({
-	channel: "chromium",
+	channel: process.env.BROWSER_CHANNEL ?? "chromium",
 	args:
 		process.platform === "linux"
 			? ["--enable-unsafe-webgpu", "--use-webgpu-adapter=swiftshader"]
@@ -126,12 +126,13 @@ try {
 			async function read(
 				texture: GPUTexture,
 				points: { x: number; y: number }[],
+				readDevice = device,
 			) {
-				const buffer = device.createBuffer({
+				const buffer = readDevice.createBuffer({
 					size: points.length * 256,
 					usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
 				});
-				const encoder = device.createCommandEncoder();
+				const encoder = readDevice.createCommandEncoder();
 				points.forEach(({ x, y }, index) => {
 					encoder.copyTextureToBuffer(
 						{ texture, origin: [x, y] },
@@ -139,7 +140,7 @@ try {
 						[1, 1],
 					);
 				});
-				device.queue.submit([encoder.finish()]);
+				readDevice.queue.submit([encoder.finish()]);
 				await buffer.mapAsync(GPUMapMode.READ);
 				const values = new Uint16Array(buffer.getMappedRange());
 				const samples = points.map((_, i) =>
@@ -273,6 +274,123 @@ try {
 				}
 				if (checked !== 2)
 					throw Error("Malformed TIFF cases were not exercised");
+			}
+
+			if (!benchmark) {
+				const file = await (await fetch("/files/rgb16-prophoto.tif")).blob();
+				// A real embedded profile must reject through the worker, then a good file must still load.
+				const bytes = new Uint8Array(await file.arrayBuffer());
+				const signature = bytes.findIndex(
+					(_, i) => String.fromCharCode(...bytes.subarray(i, i + 4)) === "acsp",
+				);
+				bytes.set(new TextEncoder().encode("CMYK"), signature - 20);
+				const invalid = await decodeTiff(device, new Blob([bytes])).then(
+					(image) => {
+						image.dispose();
+						return false;
+					},
+					(error: Error) => error.message.includes("ICC profile"),
+				);
+				if (!invalid) {
+					throw Error("Unsupported embedded ICC was accepted");
+				}
+				const images = await Promise.all([
+					decodeTiff(device, file),
+					decodeTiff(device, file),
+				]);
+				images.forEach((image) => {
+					image.dispose();
+				});
+
+				const limited = await (
+					await navigator.gpu.requestAdapter()
+				)?.requestDevice();
+				if (!limited) {
+					throw Error("No device for TIFF band checks");
+				}
+				// Exercise banding with simulated limits on a real GPU.
+				Object.defineProperty(limited.limits, "maxStorageBufferBindingSize", {
+					value: 16384,
+				});
+				Object.defineProperty(limited.limits, "maxBufferSize", {
+					value: 16384,
+				});
+				limited.addEventListener("uncapturederror", (event) =>
+					errors.push(event.error.message),
+				);
+				const bandedFile = await (await fetch("/files/lzw-strips.tif")).blob();
+				const banded = await decodeTiff(limited, bandedFile);
+				const reference = fixtures.find(
+					(entry: { name: string }) => entry.name === "lzw-strips.tif",
+				);
+				const actual = await read(banded.texture, reference.points, limited);
+				if (
+					actual.some((pixel, i) =>
+						pixel.some(
+							(value, c) =>
+								Math.abs(value - reference.points[i].rgba[c]) >
+								reference.tolerance,
+						),
+					)
+				) {
+					throw Error(
+						"TIFF banded upload changed pixels on a constrained device",
+					);
+				}
+				banded.dispose();
+				limited.destroy();
+
+				const testDevice = await (
+					await navigator.gpu.requestAdapter()
+				)?.requestDevice();
+				if (!testDevice) {
+					throw Error("No device for TIFF lifecycle checks");
+				}
+				const entered = Promise.withResolvers<void>();
+				const release = Promise.withResolvers<void>();
+				const create = testDevice.createComputePipelineAsync.bind(testDevice);
+				testDevice.createComputePipelineAsync = async (descriptor) => {
+					entered.resolve();
+					await release.promise;
+					return create(descriptor);
+				};
+				const controller = new AbortController();
+				const loading = decodeTiff(testDevice, file, {
+					signal: controller.signal,
+				});
+				await entered.promise;
+				let timedOut = false;
+				const timeout = setTimeout(() => {
+					timedOut = true;
+					release.resolve();
+				}, 1000);
+				controller.abort("cancel during pipeline creation");
+				try {
+					const cancelled = await loading.then(
+						(image) => {
+							image.dispose();
+							return false;
+						},
+						(reason: unknown) => reason === controller.signal.reason,
+					);
+					if (!cancelled || timedOut)
+						throw Error("TIFF cancellation waited for GPU setup");
+				} finally {
+					clearTimeout(timeout);
+					release.resolve();
+				}
+				const recovered = await decodeTiff(testDevice, file);
+				recovered.dispose();
+				const pending = decodeTiff(testDevice, file).then(
+					(image) => {
+						image.dispose();
+						return false;
+					},
+					(error: Error) => error.message.includes("device"),
+				);
+				testDevice.destroy();
+				if (!(await pending))
+					throw Error("TIFF did not reject after device loss");
 			}
 
 			gpu?.dispose();

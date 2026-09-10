@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { frame, type Gpu, init, target } from "vgpu/node";
 import { createGpuSource, createPipeline } from "../src/develop/gpu";
+import { uploadTiff } from "../src/tiff/upload";
 import type { RawPixels } from "../src/types";
 
 async function createRawUpload(gpu: Gpu, pixels: RawPixels) {
@@ -380,6 +381,59 @@ test.skipIf(!process.env.GPU)(
 				}
 			}
 		} finally {
+			gpu.dispose();
+		}
+	},
+);
+
+test.skipIf(!process.env.GPU)(
+	"TIFF allocation failures release textures and staging buffers",
+	async () => {
+		const gpu = await init();
+		const live = new Set<GPUBuffer | GPUTexture>();
+		function track<T extends GPUBuffer | GPUTexture>(resource: T) {
+			live.add(resource);
+			const destroy = resource.destroy.bind(resource);
+			resource.destroy = () => {
+				live.delete(resource);
+				destroy();
+			};
+			return resource;
+		}
+		const createBuffer = gpu.gpu.createBuffer.bind(gpu.gpu);
+		const createTexture = gpu.gpu.createTexture.bind(gpu.gpu);
+		const textures = spyOn(gpu.gpu, "createTexture").mockImplementation(
+			(options) => track(createTexture(options)),
+		);
+		let allocations = 0;
+		let failAt = 0;
+		const buffers = spyOn(gpu.gpu, "createBuffer").mockImplementation(
+			(options) => {
+				if (allocations++ === failAt) {
+					throw Error("Allocation failed");
+				}
+				return track(createBuffer(options));
+			},
+		);
+		try {
+			for (failAt = 0; failAt < 3; failAt++) {
+				allocations = 0;
+				await expect(
+					uploadTiff(gpu.gpu, {
+						data: new Uint8Array([128]),
+						metadata: new Uint32Array([1, 1, 1, 1, 8, 1, 1, 0, 1, 1, 1]),
+						bigEndian: false,
+						color: { matrix: identity, table: new Float32Array(3072) },
+					}),
+				).rejects.toThrow("Allocation failed");
+				expect(live.size).toBe(0);
+			}
+		} finally {
+			buffers.mockRestore();
+			textures.mockRestore();
+			for (const resource of live) {
+				resource.destroy();
+			}
 			gpu.dispose();
 		}
 	},

@@ -26,11 +26,16 @@ function createFilledBuffer(
 		usage,
 		mappedAtCreation: true,
 	});
-	new Uint8Array(result.getMappedRange()).set(
-		new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-	);
-	result.unmap();
-	return result;
+	try {
+		new Uint8Array(result.getMappedRange()).set(
+			new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+		);
+		result.unmap();
+		return result;
+	} catch (error) {
+		result.destroy();
+		throw error;
+	}
 }
 
 /** Matches the WGSL Params struct: the nine metadata words, band placement, then the padded matrix. */
@@ -51,7 +56,11 @@ function createParams(pixels: TiffPixels, startRow: number, rows: number) {
 	return new Uint8Array(params);
 }
 
-export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
+export async function uploadTiff(
+	device: GPUDevice,
+	pixels: TiffPixels,
+	signal?: AbortSignal,
+) {
 	let pending = pipelines.get(device);
 	if (!pending) {
 		pending = device
@@ -69,6 +78,7 @@ export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
 		pipelines.set(device, pending);
 	}
 	const pipeline = await pending;
+	signal?.throwIfAborted();
 
 	const { data, metadata, color } = pixels;
 	const [width, height, , , , orientation, , , rowBytes] = metadata;
@@ -96,12 +106,9 @@ export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
 			GPUTextureUsage.TEXTURE_BINDING |
 			GPUTextureUsage.COPY_SRC,
 	});
-	const curves = createFilledBuffer(
-		device,
-		color.table,
-		GPUBufferUsage.STORAGE,
-	);
+	let curves: GPUBuffer | undefined;
 	try {
+		curves = createFilledBuffer(device, color.table, GPUBufferUsage.STORAGE);
 		for (let y = 0; y < height; y += rowsPerBand) {
 			const rows = Math.min(rowsPerBand, height - y);
 			const source = createFilledBuffer(
@@ -109,12 +116,13 @@ export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
 				data.subarray(y * rowBytes, (y + rows) * rowBytes),
 				GPUBufferUsage.STORAGE,
 			);
-			const params = createFilledBuffer(
-				device,
-				createParams(pixels, y, rows),
-				GPUBufferUsage.UNIFORM,
-			);
+			let params: GPUBuffer | undefined;
 			try {
+				params = createFilledBuffer(
+					device,
+					createParams(pixels, y, rows),
+					GPUBufferUsage.UNIFORM,
+				);
 				const bindings = device.createBindGroup({
 					layout: pipeline.getBindGroupLayout(0),
 					entries: [
@@ -134,7 +142,7 @@ export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
 			} finally {
 				// Submitted work keeps its own references; the band buffers can go right away.
 				source.destroy();
-				params.destroy();
+				params?.destroy();
 			}
 		}
 		return { texture, size, dispose: () => texture.destroy() };
@@ -142,6 +150,6 @@ export async function uploadTiff(device: GPUDevice, pixels: TiffPixels) {
 		texture.destroy();
 		throw error;
 	} finally {
-		curves.destroy();
+		curves?.destroy();
 	}
 }

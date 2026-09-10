@@ -30,7 +30,7 @@ const srgb: Profile = {
 
 /**
  * Reads a matrix/TRC profile: RGB colorants and a curve per channel, or a single curve for gray.
- * Unsupported lookup-table profiles and malformed profiles fall back to sRGB.
+ * Unsupported lookup-table profiles and malformed profiles are not accepted.
  */
 export function readProfile(bytes: Uint8Array): Profile | undefined {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -43,26 +43,43 @@ export function readProfile(bytes: Uint8Array): Profile | undefined {
 	}
 
 	// The tag table follows the 128-byte header: a count, then 12-byte entries of signature, offset, size.
-	const tags = new Map<string, number>();
+	const tags = new Map<string, { at: number; size: number }>();
+	if (view.getUint32(128) > (bytes.length - 132) / 12) {
+		return;
+	}
 	for (let i = 0, count = view.getUint32(128); i < count; i++) {
-		tags.set(text(132 + i * 12), view.getUint32(136 + i * 12));
+		const at = view.getUint32(136 + i * 12);
+		const size = view.getUint32(140 + i * 12);
+		if (at < 128 || size < 8 || at > bytes.length - size) {
+			return;
+		}
+		tags.set(text(132 + i * 12), { at, size });
+	}
+
+	if ([...tags.keys()].some((name) => /^(A2B|B2A|D2B|B2D)/.test(name))) {
+		return;
 	}
 
 	const xyz = (name: string) => {
-		const at = tags.get(name);
-		return at === undefined
-			? undefined
-			: ([fixed(at + 8), fixed(at + 12), fixed(at + 16)] as const);
+		const tag = tags.get(name);
+		if (!tag || tag.size < 20 || text(tag.at) !== "XYZ ") {
+			return;
+		}
+		return [fixed(tag.at + 8), fixed(tag.at + 12), fixed(tag.at + 16)] as const;
 	};
 
 	const curve = (name: string): Curve | undefined => {
-		const at = tags.get(name);
-		if (at === undefined) {
+		const tag = tags.get(name);
+		if (!tag || tag.size < 12) {
 			return;
 		}
+		const { at, size } = tag;
 		if (text(at) === "curv") {
 			// A count of 0 is identity, 1 is a gamma in 8.8 fixed point, more is a table of 16-bit values.
 			const count = view.getUint32(at + 8);
+			if (count > (size - 12) / 2) {
+				return;
+			}
 			const entry = (i: number) =>
 				view.getUint16(at + 12 + 2 * Math.min(i, count - 1)) / 65535;
 			if (count === 0) {
@@ -81,8 +98,12 @@ export function readProfile(bytes: Uint8Array): Profile | undefined {
 		if (text(at) === "para") {
 			// Parametric kinds 0 to 4 take 1, 3, 4, 5, or 7 parameters: gamma, then a, b, c, d, e, f.
 			const kind = view.getUint16(at + 8);
+			const count = [1, 3, 4, 5, 7][kind];
+			if (!count || count > (size - 12) / 4) {
+				return;
+			}
 			const [g, a = 1, b = 0, c = 0, d = 0, e = 0, f = 0] = Array.from(
-				{ length: [1, 3, 4, 5, 7][kind] ?? 0 },
+				{ length: count },
 				(_, i) => fixed(at + 12 + i * 4),
 			);
 			if (kind === 0) {
@@ -127,14 +148,16 @@ const sampleCurves = (curves: Profile["curves"]) =>
 
 /** ICC curves and camera-independent conversion into linear Rec.2020. */
 export function tiffColor(icc: Uint8Array | undefined, linear: boolean) {
-	let profile = (icc && readProfile(icc)) ?? srgb;
-	let table = sampleCurves(
+	const profile = icc ? readProfile(icc) : srgb;
+	if (!profile) {
+		throw Error("Unsupported or malformed TIFF ICC profile.");
+	}
+	const table = sampleCurves(
 		linear ? [identity, identity, identity] : profile.curves,
 	);
-	// A curve that produces NaN or infinity is malformed; treat the whole profile as sRGB.
+	// Invalid curves must not produce a plausible image with the wrong colors.
 	if (!table.every(Number.isFinite)) {
-		profile = srgb;
-		table = sampleCurves(profile.curves);
+		throw Error("Malformed TIFF ICC transfer curve.");
 	}
 	return {
 		table,

@@ -1,3 +1,4 @@
+import { deviceSignal } from "./decode/device";
 import { compileDecoder } from "./decode/module";
 import { createSession } from "./decode/session";
 import { createGpuSource, createPipeline } from "./develop/gpu";
@@ -19,15 +20,17 @@ export function createRawDecoder(device: GPUDevice) {
 
 	function dispose() {
 		closed = true;
+		lost.removeEventListener("abort", dispose);
 		for (const close of sources) {
 			close();
 		}
 	}
-	void device.lost.then(dispose);
+	const lost = deviceSignal(device);
+	lost.addEventListener("abort", dispose, { once: true });
 
 	return {
 		async load(file: Blob, { signal }: LoadOptions = {}) {
-			if (closed) {
+			if (closed || lost.aborted) {
 				throw Error("RAW decoder is closed.");
 			}
 			if (signal?.aborted) {

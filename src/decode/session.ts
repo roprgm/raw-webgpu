@@ -21,7 +21,11 @@ export function createSession(compiled: Promise<WebAssembly.Module>) {
 
 	// The module arrives before any request; message order is guaranteed.
 	compiled.then(
-		(module) => worker.postMessage({ module }),
+		(module) => {
+			if (!failure) {
+				worker.postMessage({ module });
+			}
+		},
 		(error) => dispose(error instanceof Error ? error : Error(String(error))),
 	);
 
