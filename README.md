@@ -10,15 +10,15 @@ LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF stri
 - GPU Bayer and X-Trans demosaic, with library CPU preparation for special layouts and mandatory DNG corrections.
 - Absolute temperature/tint and initial white-balance restoration without decoding again.
 - HDR output, camera calibration, orientation and explicit resource disposal.
-- Experimental TIFF support with ICC matrix/TRC profiles and alpha.
+- TIFF support with ICC matrix/TRC profiles and alpha.
 
 ## Installation
 
 ```sh
-npm install --save-exact raw-webgpu@0.1.0-alpha.2
+npm install --save-exact raw-webgpu@0.1.0
 ```
 
-WASM, workers and types are included; consumers do not compile C++. Use a WebGPU browser with WASM SIMD/exception support and a bundler that handles worker/WASM asset URLs, such as Vite. Older TypeScript versions may need `@webgpu/types` in `compilerOptions.types`.
+WASM, workers and types are included; consumers do not compile C++. Use a WebGPU browser with WASM SIMD/exception support and a bundler that handles worker/WASM asset URLs, such as Vite. TypeScript 5.9 and newer are tested; with TypeScript 5.9, install `@webgpu/types` and include it in `compilerOptions.types`.
 
 ## Usage
 
@@ -61,15 +61,28 @@ Use separate passes for independent previews or exports. If passing an external 
 
 For file export, see the [Bun PNG/JPEG/BMP conversion example](docs/conversion.md).
 
+
+## API contract and support
+
+The supported browser baseline is Chromium with WebGPU. Verified environments are Chromium 151 on macOS with Apple M4 Pro and Linux CI with software rendering, plus Chrome 153 on macOS. Safari, Firefox, mobile browsers and other physical GPUs have not been validated. Tests simulate lower texture/buffer limits; they do not establish a device memory budget. Bun is an additional tested runtime, not a CPU fallback.
+
+- Developed RAW and decoded TIFF output is linear Rec.2020/D65 `rgba16float`, with no display tone curve. HDR values can exceed 1. TIFF alpha is straight. Camera JPEG previews apply their own rendering and are not pixel references for this output.
+- `source.texture` contains sensor or camera-RGB samples, not developed output. Read its format and metadata; do not assume every RAW is a one-channel mosaic. `source.size` is oriented output size; `metadata.size` is the unrotated sample size.
+- Calibration has three RGB gains and a nine-value column-major matrix. Development applies gains before the camera-to-working-space matrix; exposure is in stops. Independent passes can use different calibration without changing the source.
+- A decoder owns its sources, each source owns its passes and worker, and the caller owns destination textures. Disposal is idempotent. Device loss closes the decoder; create another decoder with a new device. Pending loads and calibration requests reject when their owner closes.
+- Abort signals cover loading only, including pending GPU setup. Cancellation rejects with the signal's reason. Invalid or unsupported files reject with an `Error`; message text is diagnostic, not a stable error code. Load completion queues GPU work; wait on the device queue when you need GPU completion.
+
+The public API and output contract are the supported baseline for 0.1.x. Release checks compare synthetic pixels against known color math and demosaic filters, test real workers and resource cleanup, and install the actual npm tarball in a separate consumer using TypeScript 5.9. The retained 30-camera corpus is a manual compatibility/regression check; X-Trans detail and Sigma color remain explicitly experimental in 0.1.0.
+
 ## Limitations and planned work
 
 **X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB: nearby samples provide an initial estimate, then interpolated R−G and B−G differences recover detail. White balance is applied after this fixed reconstruction; it is not equivalent to running a WB-dependent demosaic again. Further work should improve directional edges and aliasing against the retained LibRaw Markesteijn references.
 
 The camera-RGB cache keeps WB edits fast. A 16 MP image retains about 128 MB of RGB plus the 32 MB mosaic; reconstruction temporarily needs another 128 MB texture. That temporary texture is released after submission.
 
-RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
+RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental and can have visible color casts. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
 
-TIFF passes 20 of 24 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported ICC profiles fall back to sRGB. Images must fit the GPU's texture limits.
+TIFF passes 20 of 24 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
 
 ## Benchmark
 
@@ -103,7 +116,7 @@ The native build downloads checksum-pinned dependencies and caches objects in `.
 
 `test:package` builds a tarball, installs it in a temporary project, checks types and runs RAW/TIFF tests in Chromium with WebGPU. `bun run test:gpu` checks shader pixels; `bun run check` formats and lints.
 
-Publishing runs in GitHub Actions. Merge the version change into `main`, then publish a GitHub prerelease with the matching tag, such as `v0.1.0-alpha.2`. The workflow verifies the tag and commit, installs Emscripten, and runs the package checks before publishing to npm's `alpha` channel. Local publishing is not required.
+Publishing runs in GitHub Actions. Merge the version change into `main`, then publish a GitHub Release with the matching tag, such as `v0.1.0`. The workflow verifies the tag and commit, installs Emscripten, and runs the package checks before publishing to npm. Stable releases use `latest`; `-alpha.N` prereleases use `alpha`. Local publishing is not required.
 
 Configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) once for owner `roprgm`, repository `raw-webgpu`, workflow `publish.yml`, with publishing allowed and no environment name. No npm token secret is needed; npm attaches provenance automatically.
 

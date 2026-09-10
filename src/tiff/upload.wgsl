@@ -60,7 +60,9 @@ fn oriented(p: vec2u) -> vec2u {
   }
 }
 
-@compute @workgroup_size(16, 16) fn main(@builtin(global_invocation_id) id: vec3u) {
+override workgroupRows: u32 = 16;
+
+@compute @workgroup_size(16, workgroupRows) fn main(@builtin(global_invocation_id) id: vec3u) {
   if id.x >= params.width || id.y >= params.rows { return; }
   let offset = id.y * params.rowBytes + id.x * params.channels * params.bytes;
 

@@ -25,17 +25,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify alpha release
+      - name: Verify release
+        id: release
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
         shell: bash
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
-          test "$PRERELEASE" = true
+          if [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            test "$PRERELEASE" = false
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          elif [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]; then
+            test "$PRERELEASE" = true
+            echo "tag=alpha" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
           test "$RELEASE_TAG" = "v$(node -p 'require("./package.json").version')"
           git merge-base --is-ancestor HEAD origin/main
       - uses: ./.github/actions/setup
       # prepublishOnly checks formatting, shader pixels and the installed tarball.
       # prepack compiles WASM and TypeScript; the native build reuses its local cache.
-      - run: npm publish --access public --tag alpha
+      - run: npm publish --access public --tag "${{ steps.release.outputs.tag }}"

@@ -1,3 +1,4 @@
+import { deviceSignal } from "../decode/device";
 import { compileDecoder } from "../decode/module";
 import type { LoadOptions } from "../types";
 import { type TiffPixels, uploadTiff } from "./upload";
@@ -6,17 +7,18 @@ import { type TiffPixels, uploadTiff } from "./upload";
 export async function decodeTiff(
 	device: GPUDevice,
 	file: Blob,
-	{ signal }: LoadOptions = {},
+	{ signal: requestedSignal }: LoadOptions = {},
 ) {
-	if (signal?.aborted) {
-		throw signal.reason;
-	}
+	const signal = requestedSignal
+		? AbortSignal.any([requestedSignal, deviceSignal(device)])
+		: deviceSignal(device);
+	signal.throwIfAborted();
 	const worker = new Worker(new URL("./tiff-worker.js", import.meta.url), {
 		type: "module",
 	});
 	const aborted = Promise.withResolvers<never>();
-	const abort = () => aborted.reject(signal?.reason);
-	signal?.addEventListener("abort", abort);
+	const abort = () => aborted.reject(signal.reason);
+	signal.addEventListener("abort", abort);
 	try {
 		const module = await Promise.race([compileDecoder(), aborted.promise]);
 		const decoded = new Promise<TiffPixels>((resolve, reject) => {
@@ -36,9 +38,16 @@ export async function decodeTiff(
 			worker.postMessage({ file, module });
 		});
 		const pixels = await Promise.race([decoded, aborted.promise]);
-		return await uploadTiff(device, pixels);
+		const uploading = uploadTiff(device, pixels, signal).then((image) => {
+			if (signal.aborted) {
+				image.dispose();
+				throw signal.reason;
+			}
+			return image;
+		});
+		return await Promise.race([uploading, aborted.promise]);
 	} finally {
-		signal?.removeEventListener("abort", abort);
+		signal.removeEventListener("abort", abort);
 		worker.terminate();
 	}
 }
