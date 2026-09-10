@@ -5,18 +5,19 @@ const root = resolve(import.meta.dir, "..");
 const dist = process.env.PACKAGE_DIST ?? `${root}/dist`;
 const fixtureRoot = `${root}/tests/fixtures/tiff`;
 const benchmark = process.argv.includes("--benchmark");
-// Benchmarks compare against the sibling OpenLight loader and its larger sample files.
-const openlight = resolve(process.env.OPENLIGHT ?? `${root}/../openlight`);
-if (benchmark && !(await Bun.file(`${openlight}/package.json`).exists())) {
-	throw Error(
-		`Benchmark needs an OpenLight checkout; set OPENLIGHT (looked in ${openlight}).`,
-	);
+// Compare against the extracted TIFF library, using explicit files or sibling sample images.
+const tiffGpu = resolve(process.env.TIFF_GPU ?? `${root}/../tiff-gpu`);
+if (benchmark && !(await Bun.file(`${tiffGpu}/package.json`).exists())) {
+	throw Error(`Benchmark needs tiff-gpu; set TIFF_GPU (looked in ${tiffGpu}).`);
 }
+const openlight = resolve(process.env.OPENLIGHT ?? `${root}/../openlight`);
 const beforeDist =
 	process.env.BEFORE_DIST ?? `${root}/.cache/before-direct/dist`;
 const compareBefore =
 	benchmark && (await Bun.file(`${beforeDist}/index.js`).exists());
-const folder = benchmark ? `${openlight}/public/debug` : fixtureRoot;
+const folder = benchmark
+	? (process.env.TIFF_FILES ?? `${openlight}/public/debug`)
+	: fixtureRoot;
 const names = [...new Bun.Glob("*.tif").scanSync(folder)].sort();
 const paths = new Map<string, string>();
 for (const name of names) {
@@ -41,26 +42,23 @@ if (benchmark) {
 	const cache = `${root}/.cache/tiff-benchmark`;
 	await Bun.write(
 		`${cache}/reference.ts`,
-		`export { init } from "${openlight}/node_modules/vgpu/dist/index.js"; export { uploadTiff } from "${openlight}/src/lib/tiff-gpu/upload.ts";`,
+		`export { init } from "${tiffGpu}/node_modules/vgpu/dist/index.js"; export { uploadTiff } from "${tiffGpu}/upload.ts";`,
 	);
-	const worker = (
-		await Bun.file(`${openlight}/src/lib/decode/tiff.worker.ts`).text()
-	).replace(
-		'"@/lib/tiff-gpu/prepare"',
-		JSON.stringify(`${openlight}/src/lib/tiff-gpu/prepare.ts`),
+	const results = await Promise.all(
+		[`${cache}/reference.ts`, `${tiffGpu}/worker.ts`].map((entry) =>
+			Bun.build({
+				entrypoints: [entry],
+				outdir: cache,
+				target: "browser",
+				loader: { ".wgsl": "text" },
+			}),
+		),
 	);
-	await Bun.write(`${cache}/reference-worker.ts`, worker);
-	const result = await Bun.build({
-		entrypoints: [`${cache}/reference.ts`, `${cache}/reference-worker.ts`],
-		outdir: cache,
-		target: "browser",
-		loader: { ".wgsl": "text" },
-	});
-	if (!result.success) {
-		throw new AggregateError(result.logs);
+	for (const result of results) {
+		if (!result.success) throw new AggregateError(result.logs);
 	}
 	paths.set("/reference.js", `${cache}/reference.js`);
-	paths.set("/reference-worker.js", `${cache}/reference-worker.js`);
+	paths.set("/reference-worker.js", `${cache}/worker.js`);
 }
 const server = Bun.serve({
 	hostname: "127.0.0.1",
@@ -78,7 +76,13 @@ const server = Bun.serve({
 			: new Response("Not found", { status: 404 });
 	},
 });
-const browser = await chromium.launch({ channel: "chromium" });
+const browser = await chromium.launch({
+	channel: "chromium",
+	args:
+		process.platform === "linux"
+			? ["--enable-unsafe-webgpu", "--use-webgpu-adapter=swiftshader"]
+			: [],
+});
 try {
 	const page = await browser.newPage();
 	page.on("console", (message) => console.log(message.text()));
@@ -241,6 +245,36 @@ try {
 					(error: Error) => error.name === "AbortError",
 				);
 			}
+			if (!benchmark) {
+				// The big-endian Deflate fixture has four strips. Changing its height
+				// by one row exercises both decoded-size checks in the browser codec.
+				const bytes = await (
+					await fetch("/files/rgb16-deflate-strips-be.tif")
+				).arrayBuffer();
+				const view = new DataView(bytes);
+				const directory = view.getUint32(4);
+				let checked = 0;
+				for (let i = 0; i < view.getUint16(directory); i++) {
+					const entry = directory + 2 + i * 12;
+					if (view.getUint16(entry) !== 257) continue;
+					for (const height of [16, 18]) {
+						view.setUint32(entry + 8, height);
+						const rejected = await decodeTiff(device, new Blob([bytes])).then(
+							(image) => {
+								image.dispose();
+								return false;
+							},
+							() => true,
+						);
+						if (!rejected)
+							throw Error("TIFF accepted an incorrect decoded strip size");
+						checked++;
+					}
+				}
+				if (checked !== 2)
+					throw Error("Malformed TIFF cases were not exercised");
+			}
+
 			gpu?.dispose();
 			if (!gpu) {
 				device.destroy();

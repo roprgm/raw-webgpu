@@ -6,6 +6,9 @@ Most files hold a 19×17 RGB gradient where red is `x·3000 + 123`, green `y·35
 
 | File | What it covers |
 | --- | --- |
+| `rgb16-strips.tif` | Contiguous uncompressed strips with a partial final strip |
+| `rgb16-deflate-strips-be.tif` | Browser Deflate strips, big-endian, including a partial final strip |
+| `rgb16-deflate-predictor.tif` | Browser Deflate followed by SDK horizontal prediction |
 | `rgb16-le.tif` | Uncompressed strips, little-endian |
 | `rgb16-lzw-be.tif` | LZW, big-endian |
 | `rgb16-planar-tiled.tif` | Deflate, horizontal prediction, planar 16×16 tiles |

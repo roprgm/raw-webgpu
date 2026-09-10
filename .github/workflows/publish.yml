@@ -1,0 +1,65 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VGPU_ADAPTER: software
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.2
+      - name: Verify alpha release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+          test "$PRERELEASE" = true
+          test "$RELEASE_TAG" = "v$(node -p 'require("./package.json").version')"
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: emscripten-core/emsdk
+          ref: 5eb0bde7585670252e8ba05e9d361627bffd08b5 # 6.0.9
+          path: .cache/emsdk
+          persist-credentials: false
+      - name: Install Emscripten
+        shell: bash
+        run: |
+          .cache/emsdk/emsdk install 6.0.9
+          .cache/emsdk/emsdk activate 6.0.9
+          echo "$GITHUB_WORKSPACE/.cache/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - run: bun install --frozen-lockfile
+      - name: Install test renderers
+        run: |
+          bunx --no-install playwright install --with-deps chromium
+          bunx --no-install vgpu install-software-renderer
+      # prepublishOnly checks formatting, shader pixels and the installed tarball.
+      # prepack compiles WASM and TypeScript; the native build reuses its local cache.
+      - run: npm publish --access public --tag alpha

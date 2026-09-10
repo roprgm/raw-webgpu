@@ -284,3 +284,103 @@ test.skipIf(!process.env.GPU)(
 		}
 	},
 );
+
+test.skipIf(!process.env.GPU)(
+	"X-Trans preserves detail, measured samples and oriented WB edits",
+	async () => {
+		const gpu = await init();
+		const pipeline = await createPipeline(gpu.gpu);
+		const size: [number, number] = [96, 84];
+		const cfa = [
+			1, 0, 1, 1, 2, 1, 2, 1, 2, 0, 1, 0, 1, 0, 1, 1, 2, 1, 1, 2, 1, 1, 0, 1, 0,
+			1, 0, 2, 1, 2, 1, 2, 1, 1, 0, 1,
+		];
+		const signals = [
+			(x: number, y: number, c: number) =>
+				[0.3, 0.5, 0.2][c] + 0.12 * Math.sin((x + y) * 0.65),
+			(x: number, y: number) => (x + y > 90 ? 0.7 : 0.2),
+			(x: number, y: number, c: number) =>
+				x + y > 90 ? [0.7, 0.3, 0.2][c] : [0.2, 0.4, 0.6][c],
+		];
+		try {
+			for (const [index, signal] of signals.entries()) {
+				const data = new Uint16Array(size[0] * size[1]);
+				for (let y = 0; y < size[1]; y++) {
+					for (let x = 0; x < size[0]; x++) {
+						data[y * size[0] + x] = Math.round(
+							signal(x, y, cfa[(y % 6) * 6 + (x % 6)]) * 65535,
+						);
+					}
+				}
+				for (let flip = 0; flip < 8; flip++) {
+					const source = createGpuSource(
+						gpu.gpu,
+						{
+							data,
+							size,
+							cfa,
+							cfaSize: 6,
+							flip,
+							black: [0, 0, 0, 0],
+							white: 65535,
+							vignette: Array(9).fill(0),
+							demosaic: "gpu",
+						},
+						pipeline,
+					);
+					const output = target(gpu, {
+						size: source.size,
+						format: "rgba16float",
+					});
+					const pass = source.createDevelopPass();
+					try {
+						for (const gains of [
+							[1, 1, 1],
+							[2, 1, 3],
+						]) {
+							pass.render({
+								destination: output.color.gpu,
+								calibration: { gains, matrix: identity },
+							});
+							const pixels = await output.readFloats();
+							let squared = 0;
+							let count = 0;
+							for (let y = 0; y < size[1]; y++) {
+								for (let x = 0; x < size[0]; x++) {
+									const ox = flip & 1 ? size[0] - 1 - x : x;
+									const oy = flip & 2 ? size[1] - 1 - y : y;
+									const offset =
+										(flip & 4 ? ox * size[1] + oy : oy * size[0] + ox) * 4;
+									const measured = cfa[(y % 6) * 6 + (x % 6)];
+									expect(
+										Math.abs(
+											pixels[offset + measured] / gains[measured] -
+												data[y * size[0] + x] / 65535,
+										),
+									).toBeLessThan(0.001);
+									if (x < 8 || y < 8 || x >= size[0] - 8 || y >= size[1] - 8)
+										continue;
+									for (let c = 0; c < 3; c++) {
+										squared +=
+											(pixels[offset + c] / gains[c] - signal(x, y, c)) ** 2;
+										count++;
+									}
+								}
+							}
+							// Known source images, not snapshots of the shader. The old independent
+							// interpolation exceeds both detail thresholds (0.0277 and 0.0396).
+							expect(Math.sqrt(squared / count)).toBeLessThan(
+								[0.02, 0.032, 0.04][index],
+							);
+						}
+					} finally {
+						source.dispose();
+						output.color.dispose();
+					}
+				}
+			}
+		} finally {
+			gpu.dispose();
+		}
+	},
+);

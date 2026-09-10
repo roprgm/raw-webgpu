@@ -4,9 +4,9 @@ export type TiffPixels = {
 	/** Interleaved samples, one row after another, exactly as the file or the SDK laid them out. */
 	data: Uint8Array;
 	/**
-	 * Nine values from native/tiff.cpp: width, height, channels, bytes per sample,
+	 * Eleven values from native/tiff.cpp: width, height, channels, bytes per sample,
 	 * bits per sample (zero for float), orientation, photometric interpretation,
-	 * extra-sample kind (1 for associated alpha), row bytes.
+	 * extra-sample kind (1 for associated alpha), row bytes, compression, predictor.
 	 */
 	metadata: Uint32Array;
 	/** Whether the samples still carry the file's big-endian byte order. */
@@ -37,7 +37,7 @@ function createFilledBuffer(
 function createParams(pixels: TiffPixels, startRow: number, rows: number) {
 	const params = new ArrayBuffer(96);
 	const integers = new Uint32Array(params);
-	integers.set(pixels.metadata);
+	integers.set(pixels.metadata.subarray(0, 9));
 	integers[9] = startRow;
 	integers[10] = rows;
 	integers[11] = Number(pixels.bigEndian);
