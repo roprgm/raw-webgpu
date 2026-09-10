@@ -4,6 +4,7 @@ import "./style.css";
 
 const canvas = document.querySelector("canvas")!;
 const input = document.querySelector("input")!;
+const message = document.querySelector("span")!;
 const device = await (await navigator.gpu.requestAdapter())!.requestDevice();
 const context = canvas.getContext("webgpu")!;
 const format = navigator.gpu.getPreferredCanvasFormat();
@@ -22,9 +23,12 @@ async function load(file?: File) {
 				destination: context.getCurrentTexture(),
 				calibration: source.calibration,
 			});
+			message.textContent = "";
 		} finally {
 			source.dispose();
 		}
+	} catch {
+		message.textContent = "Could not load this file. Try a camera RAW or DNG.";
 	} finally {
 		input.disabled = false;
 	}
