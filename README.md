@@ -2,7 +2,9 @@
 
 Load camera RAW, DNG and TIFF files into WebGPU textures. Develop into linear Rec.2020 or display sRGB, with adjustable white balance and exposure.
 
-LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF strips use original file bytes or browser Deflate; complex layouts retain the SDK fallback. WebGPU handles supported demosaic and color processing. Supply your own `GPUDevice`; no rendering framework or runtime dependencies are required.
+[Try the demo](https://raw-webgpu.vercel.app) or browse its [minimal TypeScript source](web/main.ts). Files stay in your browser.
+
+LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. WebGPU handles supported demosaic and color processing. Supply your own `GPUDevice`; no rendering framework is required.
 
 ## Features
 
@@ -15,10 +17,10 @@ LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF stri
 ## Installation
 
 ```sh
-npm install --save-exact raw-webgpu@0.1.1
+npm install raw-webgpu
 ```
 
-WASM, workers and types are included; consumers do not compile C++. Use a WebGPU browser with WASM SIMD/exception support and a bundler that handles worker/WASM asset URLs, such as Vite. TypeScript 5.9 and newer are tested; with TypeScript 5.9, install `@webgpu/types` and include it in `compilerOptions.types`.
+WASM, workers and TypeScript types are included. No C++ build is needed. Use a WebGPU browser with WASM SIMD/exception support and a bundler such as Vite. With TypeScript 5.9, also install `@webgpu/types` and include it in `compilerOptions.types`.
 
 ## Usage
 
@@ -45,11 +47,13 @@ destination.destroy();
 decoder.dispose();
 ```
 
-For direct display, create a pass with `{ outputColorSpace: "srgb", format }`, where `format` matches your sRGB canvas configuration, usually `navigator.gpu.getPreferredCanvasFormat()`. Render to `context.getCurrentTexture()` with the canvas dimensions set to `source.size`. No app shader is needed.
+### Display on a canvas
+
+Create a pass with `{ outputColorSpace: "srgb", format }`, where `format` matches your sRGB canvas configuration, usually `navigator.gpu.getPreferredCanvasFormat()`. Render to `context.getCurrentTexture()` with the canvas dimensions set to `source.size`. No app shader is needed.
 
 The default is `{ outputColorSpace: "linear-rec2020", format: "rgba16float" }`. Supported formats are `rgba16float`, `rgba8unorm` and `bgra8unorm`. sRGB output converts primaries, clips to [0, 1] and applies the sRGB transfer function on GPU; it does not add a photographic tone curve. Do not apply sRGB encoding again.
 
-For TIFF:
+### TIFF
 
 ```ts
 import { decodeTiff } from "raw-webgpu";
@@ -59,56 +63,91 @@ const image = await decodeTiff(device, file);
 image.dispose(); // When finished.
 ```
 
-Both loaders accept `{ signal }` for cancellation. `source.metadata` describes the samples and calibration origin; `source.calibrate()` restores the initial white point. The caller owns the device and destination textures. `decoder.dispose()` also closes pending loads and loaded sources.
+Both loaders accept `{ signal }` for cancellation. `source.calibrate()` restores the initial white point.
 
 Use separate passes for independent previews or exports. If passing an external `encoder` to `render`, render each pass only once before submitting it because uniform writes are not snapshots. Loading queues GPU work; use `device.queue.onSubmittedWorkDone()` to wait for completion.
 
 For file export, see the [Bun PNG/JPEG/BMP conversion example](docs/conversion.md).
 
-
-## Minimal website
-
-`web/` is a fullscreen RAW viewer using the published npm package. Run `cd web && bun install && bun run dev`. Build with `bun run build` and serve `web/dist/` over HTTPS. On Vercel, set the root directory to `web`. Files stay in the browser. With the dev server running, `bun run test:web` from the repository root checks loading.
-
 ## API contract and support
 
-The supported browser baseline is Chromium with WebGPU. Verified environments are Chromium 151 on macOS with Apple M4 Pro and Linux CI with software rendering, plus Chrome 153 on macOS. Safari, Firefox, mobile browsers and other physical GPUs have not been validated. Tests simulate lower texture/buffer limits; they do not establish a device memory budget. Bun is an additional tested runtime, not a CPU fallback.
+Tested with Chromium on macOS and Linux CI with software rendering. Safari, Firefox and mobile browsers have not been validated. Bun is also tested; WebGPU is still required.
 
 - Default RAW and decoded TIFF output is linear Rec.2020/D65 `rgba16float`, with no display tone curve. HDR values can exceed 1. RAW passes can instead output encoded sRGB for display. TIFF alpha is straight. Camera JPEG previews apply their own rendering and are not pixel references for this output.
 - `source.texture` contains sensor or camera-RGB samples, not developed output. Read its format and metadata; do not assume every RAW is a one-channel mosaic. `source.size` is oriented output size; `metadata.size` is the unrotated sample size.
 - Calibration has three RGB gains and a nine-value column-major matrix. Development applies gains before the camera-to-working-space matrix; exposure is in stops. Independent passes can use different calibration without changing the source.
 - A decoder owns its sources, each source owns its passes and worker, and the caller owns destination textures. Disposal is idempotent. Device loss closes the decoder; create another decoder with a new device. Pending loads and calibration requests reject when their owner closes.
-- Abort signals cover loading only, including pending GPU setup. Cancellation rejects with the signal's reason. Invalid or unsupported files reject with an `Error`; message text is diagnostic, not a stable error code. Load completion queues GPU work; wait on the device queue when you need GPU completion.
+- Abort signals cover loading only, including pending GPU setup. Cancellation rejects with the signal's reason. Invalid or unsupported files reject with an `Error`; message text is diagnostic, not a stable error code.
 
-The public API and output contract are the supported baseline for 0.1.x. Release checks compare synthetic pixels against known color math and demosaic filters, test real workers and resource cleanup, and install the actual npm tarball in a separate consumer using TypeScript 5.9. The retained 30-camera corpus is a manual compatibility/regression check; X-Trans detail and Sigma color remain explicitly experimental in 0.1.0.
+The API contract applies to 0.1.x. See the benchmark below for tested camera samples; support can vary with compression mode and camera settings.
 
 ## Limitations and planned work
 
-**X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB: nearby samples provide an initial estimate, then interpolated R−G and B−G differences recover detail. White balance is applied after this fixed reconstruction; it is not equivalent to running a WB-dependent demosaic again. Further work should improve directional edges and aliasing against the retained LibRaw Markesteijn references.
+**X-Trans quality remains experimental.** Two GPU passes reconstruct camera RGB using nearby samples and color differences. This recovers less fine detail than LibRaw's Markesteijn demosaic; directional edges and aliasing need further GPU work. White balance is applied to the cached reconstruction, rather than rerunning a WB-dependent demosaic.
 
 The camera-RGB cache keeps WB edits fast. A 16 MP image retains about 128 MB of RGB plus the 32 MB mosaic; reconstruction temporarily needs another 128 MB texture. That temporary texture is released after submission.
 
 RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental and can have visible color casts. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
 
-TIFF passes 20 of 24 fixtures; bilevel, palette, float64 and YCbCr JPEG are rejected. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
+TIFF bilevel, palette, float64 and YCbCr JPEG layouts are not supported. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
 
 ## Benchmark
 
-All 30 camera samples converted in Chromium and Bun. Selected results on Apple M4 Pro with Chromium 151, measured September 9, 2026; Fuji results updated September 10:
+Published **raw-webgpu 0.1.1** vs [libraw-wasm 1.6.0](https://github.com/ybouane/LibRaw-Wasm), measured September 10, 2026 on Apple M4 Pro, macOS, Chromium 151 with hardware WebGPU. Cross-origin isolation was enabled for LibRaw's worker threads. The table covers 30 camera models from [rawsamples.ch](https://rawsamples.ch/index.php/en/), ten additional mirrorless cameras from [raw.pixls.us](https://raw.pixls.us/), and an iPhone ProRAW file.
 
-| Camera | Load | WB GPU update |
-| --- | ---: | ---: |
-| Nikon D800 | 397 ms | Not measured |
-| Sony A7R II | 365 ms | Not measured |
-| Fuji X-Pro1 | 267 ms | 0.8 ms |
-| Fuji X-T10 | 232 ms | 0.9 ms |
-| Nokia Lumia 1020 | 1,719 ms | Not measured |
+Times are in milliseconds. MP is output megapixels; MB is input file size in decimal megabytes. The target is a full-resolution sRGB RGBA8 texture on the GPU. raw-webgpu completed all 41 files without reported GPU errors; libraw-wasm produced RGB output for 39. Dimensions matched for all 39 shared successes. Completion does not establish color or demosaic quality.
 
-Loading is the median of three runs after one warmup, from an in-memory file through decoding, upload and GPU completion. Disk reads and export encoding are excluded. WB timings measure the GPU stage over ten edits after two warmups. These numbers do not guarantee application frame rates. The X-Trans refinement reduced mean absolute RGB error against the retained LibRaw exports from 3.59 to 2.15 levels for X-Pro1 and from 3.77 to 2.30 for X-T10 on an 8-bit scale. Those exports are comparison references, not ground truth.
+| Camera | File | MP | MB | raw-webgpu | LibRaw q3 | LibRaw q0 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Sony A7 III | ARW | 24.2 | 25.6 | 162 | 801 | 405 |
+| Sony A7 IV | ARW | 32.9 | 40.7 | 229 | 1,043 | 552 |
+| Sony A6400 | ARW | 24.2 | 25.1 | 158 | 759 | 411 |
+| Canon EOS R5 | CR3 | 44.7 | 40.6 | 523 | 1,659 | 958 |
+| Canon EOS R6 | CR3 | 20.2 | 22.9 | 226 | 726 | 426 |
+| Canon EOS R6 Mark II | CR3 | 24.2 | 29.4 | 286 | 889 | 501 |
+| Nikon Z6 | NEF | 24.5 | 30.2 | 254 | 1,036 | 667 |
+| Nikon Z8 | NEF | 45.7 | 60.8 | 548 | 1,954 | 1,225 |
+| Fujifilm X-T5 | RAF | 40.1 | 43.1 | 1,844 | 13,908 | 1,876 |
+| Fujifilm X100VI | RAF | 40.1 | 49.4 | 1,805 | 14,282 | 2,158 |
+| iPhone ProRAW | DNG | 12.2 | 11.6 | 833 | No output | No output |
+| Canon EOS 5D Mark III | CR2 | 22.4 | 38.1 | 505 | 1,116 | 676 |
+| Canon EOS 5DS | CR2 | 51.2 | 67.1 | 953 | 2,435 | 1,615 |
+| Canon EOS 10D | CRW | 6.3 | 6.4 | 84 | 256 | 157 |
+| Nikon D800 | NEF | 36.3 | 43.3 | 423 | 1,564 | 1,045 |
+| Nikon D750 | NEF | 24.3 | 22.3 | 269 | 1,048 | 671 |
+| Nikon D70 | NEF | 6.1 | 5.5 | 74 | 284 | 191 |
+| Sony Alpha 7R II | ARW | 42.4 | 43.0 | 371 | 1,519 | 888 |
+| Sony RX100 | ARW | 20.2 | 20.9 | 150 | 659 | 348 |
+| Sony Alpha 100 | ARW | 10.1 | 9.1 | 132 | 407 | 247 |
+| Fujifilm X-Pro1 | RAF | 16.3 | 26.1 | 326 | 5,518 | 325 |
+| Fujifilm X-T10 | RAF | 16.3 | 33.8 | 329 | 5,677 | 256 |
+| Fujifilm S5 Pro | RAF | 6.1 | 25.7 | 193 | 388 | 197 |
+| Olympus E-M1 | ORF | 16.1 | 16.4 | 452 | 793 | 534 |
+| Olympus E-1 | ORF | 5.2 | 10.7 | 35 | 164 | 82 |
+| Panasonic GH4 | RW2 | 16.1 | 19.9 | 140 | 623 | 364 |
+| Panasonic FZ8 | RAW | 7.2 | 11.6 | 63 | 263 | 147 |
+| Pentax K-3 II | PEF | 24.4 | 33.2 | 383 | 1,046 | 642 |
+| Pentax K-50 | DNG | 16.2 | 14.4 | 264 | 690 | 435 |
+| Leica M Typ 240 | DNG | 23.9 | 28.1 | 312 | 1,021 | 630 |
+| Samsung NX500 | SRW | 28.2 | 46.3 | 366 | 1,073 | 612 |
+| Sigma DP2 Quattro | X3F | 19.7 | 57.7 | 1,031 | No output | No output |
+| Kodak DCS Pro | DCR | 13.6 | 14.1 | 167 | 544 | 329 |
+| Hasselblad H3DII-39 | 3FR | 39.5 | 55.0 | 744 | 1,536 | 879 |
+| Mamiya ZD | MEF | 21.5 | 36.6 | 158 | 887 | 534 |
+| Minolta Dynax 7D | MRW | 6.1 | 9.2 | 48 | 214 | 120 |
+| Ricoh GR | DNG | 10.4 | 11.3 | 234 | 514 | 351 |
+| Epson R-D1 | ERF | 6.2 | 10.0 | 52 | 217 | 127 |
+| Leaf Aptus 22 | MOS | 21.4 | 43.4 | 147 | 749 | 391 |
+| OnePlus One | DNG | 13.1 | 17.2 | 485 | 495 | 284 |
+| Nokia Lumia 1020 | DNG | 38.3 | 49.7 | 2,384 | 1,429 | 805 |
 
-On the same machine, TIFF loading improved from 437 to 321 ms for a 14.6 MP Deflate image, from 59 to 49 ms for a 19 MP uncompressed RGB16 image, and from 546 to 443 ms for a 19 MP Deflate image with horizontal prediction. Medians exclude one warmup and include GPU completion. The TIFF changes preserved the checked pixels across all 30 RAW samples, with no sustained RAW loading regression observed.
+Loading includes decoding, development, CPU-to-GPU transfer and GPU completion. Values are medians of three measured runs after one warmup per file and mode, with alternating execution order. File reads/downloads, initial module setup, canvas presentation and export encoding are excluded. LibRaw timings include RGB-to-RGBA packing and `writeTexture`; raw-webgpu uses `createDevelopPass({ outputColorSpace: "srgb", format: "rgba8unorm" })`.
 
-WASM is 1.82 MB, or about 570 KB with Brotli. Full measurements and downloaded files remain in the local ignored `.cache/` directory.
+LibRaw uses camera WB, no auto-brightening, 8-bit sRGB output and `gamm: [1 / 2.4, 12.92]`. **q3** is its standard quality setting; **q0** selects fast interpolation. Demosaic, calibration and highlight handling differ, so this compares loading workflows, not identical pixels or equal image quality. In particular, raw-webgpu's X-Trans reconstruction retains less fine detail than the higher-quality LibRaw reference.
+
+The comparison has exceptions: LibRaw q0 matches or beats raw-webgpu on the X-Pro1 and X-T10, and both LibRaw settings beat it on the Lumia 1020. Those results held in a separate repeat run. LibRaw q0 also beats raw-webgpu on the OnePlus One. “No output” means this package version's `imageData()` returned no RGB data for that sample, confirmed in the repeat run; it is not a claim that upstream LibRaw cannot support the camera. Sigma color remains experimental in raw-webgpu.
+
+WASM is 1.82 MB, or about 570 KB with Brotli.
 
 ## Development
 
@@ -120,15 +159,19 @@ bun run build
 bun run test:package
 ```
 
-The native build downloads checksum-pinned dependencies and caches objects in `.cache/native`. Use `bun run build:sdk` for TypeScript-only changes. `dist/` and downloaded camera files stay outside Git. For local development, run `bun link` here and `bun link raw-webgpu` in the consuming app.
+The native build downloads checksum-verified dependencies and reuses compiled objects. Use `bun run build:sdk` for TypeScript-only changes. To test changes in another app, run `bun link` here and `bun link raw-webgpu` in that app.
 
 `test:package` builds a tarball, installs it in a temporary project, checks types and runs RAW/TIFF tests in Chromium with WebGPU. `bun run test:gpu` checks shader pixels; `bun run check` formats and lints.
 
-Publishing runs in GitHub Actions. Merge the version change into `main`, then publish a GitHub Release with the matching tag, such as `v0.1.0`. The workflow verifies the tag and commit, installs Emscripten, and runs the package checks before publishing to npm. Stable releases use `latest`; `-alpha.N` prereleases use `alpha`. Local publishing is not required.
+### Demo
 
-Configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) once for owner `roprgm`, repository `raw-webgpu`, workflow `publish.yml`, with publishing allowed and no environment name. No npm token secret is needed; npm attaches provenance automatically.
+```sh
+cd web
+bun install
+bun run dev
+```
 
-`prepack` rebuilds the package; `prepublishOnly` checks formatting, GPU tests and the installed tarball. Linux browser tests use SwiftShader, and the release job uses vgpu's software renderer for shader tests. Performance measurements should still use real hardware.
+The demo uses the published npm package. Build with `bun run build`; deploy `web/dist/` over HTTPS. With the server running, `bun run test:web` from the repository root checks the prompt, invalid files and RAW loading.
 
 ## License
 

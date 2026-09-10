@@ -27,6 +27,12 @@ label {
 	cursor: pointer;
 }
 
+span {
+	padding: 24px;
+	text-align: center;
+	text-shadow: 0 1px 4px #000;
+}
+
 input {
 	position: absolute;
 	width: 1px;
