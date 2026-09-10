@@ -29,7 +29,7 @@ export async function load(file: Blob) {
   const decoder = createRawDecoder(device);
   const source: RawSource = await decoder.load(file);
   const calibration = await source.calibrate({ temperature: 6500, tint: 0 });
-  const pass = source.createDevelopPass();
+  const pass = source.createDevelopPass({ outputColorSpace: "srgb", format: "bgra8unorm" });
   pass.dispose();
   source.dispose();
   decoder.dispose();

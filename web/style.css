@@ -1,0 +1,52 @@
+:root {
+	color-scheme: dark;
+	font: 14px system-ui;
+	background: #111;
+	color: #eee;
+}
+
+body {
+	margin: 0;
+	height: 100dvh;
+	display: grid;
+	place-items: center;
+	overflow: hidden;
+}
+
+canvas {
+	width: 100vw;
+	height: 100dvh;
+	object-fit: contain;
+}
+
+label {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+}
+
+input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+}
+
+label:focus-within {
+	outline: 2px solid #aaa;
+	outline-offset: -4px;
+}
+
+a {
+	position: fixed;
+	bottom: 20px;
+	right: 24px;
+	color: #aaa;
+	text-decoration: none;
+}
+
+a:hover {
+	color: white;
+}

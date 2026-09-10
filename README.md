@@ -1,6 +1,6 @@
 # raw-webgpu
 
-Load camera RAW, DNG and TIFF files into WebGPU textures. Develop into linear Rec.2020 `rgba16float`, with adjustable white balance and exposure.
+Load camera RAW, DNG and TIFF files into WebGPU textures. Develop into linear Rec.2020 or display sRGB, with adjustable white balance and exposure.
 
 LibRaw, Adobe DNG SDK and libjxl decode files in a WASM worker. Simple TIFF strips use original file bytes or browser Deflate; complex layouts retain the SDK fallback. WebGPU handles supported demosaic and color processing. Supply your own `GPUDevice`; no rendering framework or runtime dependencies are required.
 
@@ -45,6 +45,10 @@ destination.destroy();
 decoder.dispose();
 ```
 
+The display options below require a local build until the next npm release. For direct display, create a pass with `{ outputColorSpace: "srgb", format }`, where `format` matches your sRGB canvas configuration, usually `navigator.gpu.getPreferredCanvasFormat()`. Render to `context.getCurrentTexture()` with the canvas dimensions set to `source.size`. No app shader is needed.
+
+The default is `{ outputColorSpace: "linear-rec2020", format: "rgba16float" }`. Supported formats are `rgba16float`, `rgba8unorm` and `bgra8unorm`. sRGB output converts primaries, clips to [0, 1] and applies the sRGB transfer function on GPU; it does not add a photographic tone curve. Do not apply sRGB encoding again.
+
 For TIFF:
 
 ```ts
@@ -62,11 +66,15 @@ Use separate passes for independent previews or exports. If passing an external 
 For file export, see the [Bun PNG/JPEG/BMP conversion example](docs/conversion.md).
 
 
+## Minimal website
+
+`web/` is a fullscreen RAW viewer with no app shader or rendering framework. It currently uses a local link: build the library and run `bun link` at the repository root, then `cd web && bun install && bun run dev`. After publishing the new API, pin that npm version in `web/package.json` for standalone deployment. Build with `bun run build` and serve `web/dist/` over HTTPS. Files stay in the browser. With the dev server running, `bun run test:web` from the repository root checks loading through Vite.
+
 ## API contract and support
 
 The supported browser baseline is Chromium with WebGPU. Verified environments are Chromium 151 on macOS with Apple M4 Pro and Linux CI with software rendering, plus Chrome 153 on macOS. Safari, Firefox, mobile browsers and other physical GPUs have not been validated. Tests simulate lower texture/buffer limits; they do not establish a device memory budget. Bun is an additional tested runtime, not a CPU fallback.
 
-- Developed RAW and decoded TIFF output is linear Rec.2020/D65 `rgba16float`, with no display tone curve. HDR values can exceed 1. TIFF alpha is straight. Camera JPEG previews apply their own rendering and are not pixel references for this output.
+- Default RAW and decoded TIFF output is linear Rec.2020/D65 `rgba16float`, with no display tone curve. HDR values can exceed 1. RAW passes can instead output encoded sRGB for display. TIFF alpha is straight. Camera JPEG previews apply their own rendering and are not pixel references for this output.
 - `source.texture` contains sensor or camera-RGB samples, not developed output. Read its format and metadata; do not assume every RAW is a one-channel mosaic. `source.size` is oriented output size; `metadata.size` is the unrotated sample size.
 - Calibration has three RGB gains and a nine-value column-major matrix. Development applies gains before the camera-to-working-space matrix; exposure is in stops. Independent passes can use different calibration without changing the source.
 - A decoder owns its sources, each source owns its passes and worker, and the caller owns destination textures. Disposal is idempotent. Device loss closes the decoder; create another decoder with a new device. Pending loads and calibration requests reject when their owner closes.

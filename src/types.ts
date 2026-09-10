@@ -41,6 +41,13 @@ export type LoadOptions = {
 	signal?: AbortSignal;
 };
 
+export type DevelopPassOptions = {
+	/** Default linear-rec2020 preserves HDR. srgb converts primaries, clips to [0, 1] and encodes sRGB. */
+	outputColorSpace?: "linear-rec2020" | "srgb";
+	/** rgba16float by default; rgba8unorm and bgra8unorm also supported for direct display. */
+	format?: GPUTextureFormat;
+};
+
 export type DevelopOptions = {
 	destination: GPUTexture;
 	calibration: Calibration;

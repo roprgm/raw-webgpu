@@ -7,6 +7,7 @@ import type { LoadOptions } from "./types";
 export type {
 	Calibration,
 	DevelopOptions,
+	DevelopPassOptions,
 	LoadOptions,
 	RawMetadata,
 	WhiteBalance,

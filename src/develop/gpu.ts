@@ -1,22 +1,63 @@
-import type { DevelopOptions, RawMetadata, RawPixels } from "../types";
+import type {
+	DevelopOptions,
+	DevelopPassOptions,
+	RawMetadata,
+	RawPixels,
+} from "../types";
 import shader from "./develop.wgsl";
 
 export async function createPipeline(device: GPUDevice) {
 	const module = device.createShaderModule({ code: shader });
-	function create(entryPoint: string) {
-		return device.createRenderPipelineAsync({
+	const pipelines = new Map<string, GPURenderPipeline>();
+	function descriptor(
+		entryPoint: string,
+		options: DevelopPassOptions = {},
+	): GPURenderPipelineDescriptor {
+		const { format = "rgba16float", outputColorSpace = "linear-rec2020" } =
+			options;
+		if (!["rgba16float", "rgba8unorm", "bgra8unorm"].includes(format)) {
+			throw Error(
+				"RAW output format must be rgba16float, rgba8unorm or bgra8unorm.",
+			);
+		}
+		return {
 			layout: "auto",
 			vertex: { module, entryPoint: "vs_main" },
-			fragment: { module, entryPoint, targets: [{ format: "rgba16float" }] },
+			fragment: {
+				module,
+				entryPoint,
+				targets: [{ format }],
+				constants: { outputSrgb: Number(outputColorSpace === "srgb") },
+			},
 			primitive: { topology: "triangle-list" },
-		});
+		};
 	}
-	const [sensor, camera, refine] = await Promise.all([
-		create("fs_main"),
-		create("fs_camera"),
-		create("fs_refine"),
-	]);
-	return { sensor, camera, refine };
+	function key(entryPoint: string, options: DevelopPassOptions = {}) {
+		return `${entryPoint}:${options.format ?? "rgba16float"}:${options.outputColorSpace ?? "linear-rec2020"}`;
+	}
+	const [sensor, camera, refine] = await Promise.all(
+		["fs_main", "fs_camera", "fs_refine"].map(async (entryPoint) => {
+			const pipeline = await device.createRenderPipelineAsync(
+				descriptor(entryPoint),
+			);
+			pipelines.set(key(entryPoint), pipeline);
+			return pipeline;
+		}),
+	);
+	return {
+		sensor,
+		camera,
+		refine,
+		get(entryPoint: string, options: DevelopPassOptions) {
+			const id = key(entryPoint, options);
+			let pipeline = pipelines.get(id);
+			if (!pipeline) {
+				pipeline = device.createRenderPipeline(descriptor(entryPoint, options));
+				pipelines.set(id, pipeline);
+			}
+			return pipeline;
+		},
+	};
 }
 
 function createUniform(device: GPUDevice, data: ArrayBuffer) {
@@ -98,6 +139,7 @@ export function createGpuSource(
 	function createPass(
 		renderPipeline: GPURenderPipeline,
 		entries: GPUBindGroupEntry[],
+		format: GPUTextureFormat = "rgba16float",
 	) {
 		if (closed) {
 			throw Error("RAW source is closed.");
@@ -129,12 +171,12 @@ export function createGpuSource(
 				}
 				const { destination, calibration, exposure = 0 } = options;
 				if (
-					destination.format !== "rgba16float" ||
+					destination.format !== format ||
 					destination.width !== size[0] ||
 					destination.height !== size[1]
 				) {
 					throw Error(
-						"RAW destination must be an rgba16float texture matching the oriented source size.",
+						`RAW destination must be a ${format} texture matching the oriented source size.`,
 					);
 				}
 
@@ -261,13 +303,14 @@ export function createGpuSource(
 			texture,
 			metadata,
 			size,
-			createDevelopPass() {
-				if (cameraTexture) {
-					return createPass(pipeline.camera, [
-						{ binding: 5, resource: cameraTexture.createView() },
-					]);
-				}
-				return createPass(pipeline.sensor, sensorEntries);
+			createDevelopPass(options: DevelopPassOptions = {}) {
+				return createPass(
+					pipeline.get(cameraTexture ? "fs_camera" : "fs_main", options),
+					cameraTexture
+						? [{ binding: 5, resource: cameraTexture.createView() }]
+						: sensorEntries,
+					options.format,
+				);
 			},
 			dispose,
 		};

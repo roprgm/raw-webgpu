@@ -1,5 +1,20 @@
-// Sensor samples in, unclipped linear Rec.2020 out: normalize, white balance,
+// Sensor samples in, linear Rec.2020 or display sRGB out: normalize, white balance,
 // demosaic when needed, correct vignetting, convert color and apply exposure.
+
+// Specialization removes display conversion from the default editor pipeline.
+override outputSrgb: bool = false;
+
+fn output(color: vec3f) -> vec4f {
+  if (!outputSrgb) { return vec4f(color, 1.0); }
+  let matrix = mat3x3f(
+    1.660491, -0.124550, -0.018151,
+    -0.587641, 1.132900, -0.100579,
+    -0.072850, -0.008349, 1.118730,
+  );
+  let rgb = clamp(matrix * color, vec3f(0.0), vec3f(1.0));
+  let encoded = select(1.055 * pow(rgb, vec3f(1.0 / 2.4)) - 0.055, 12.92 * rgb, rgb <= vec3f(0.0031308));
+  return vec4f(encoded, 1.0);
+}
 
 struct Sensor {
   black: vec4f,
@@ -126,7 +141,7 @@ fn demosaicPattern(p: vec2i, size: vec2i) -> vec3f {
   let k = vignette.coefficients;
   let gain = 1.0 + r2 * (k.x + r2 * (k.y + r2 * (k.z + r2 * (k.w + r2 * vignette.last))));
 
-  return vec4f(calibration.matrix * camera * gain * calibration.exposure, 1.0);
+  return output(calibration.matrix * camera * gain * calibration.exposure);
 }
 
 @group(0) @binding(5) var cameraSource: texture_2d<f32>;
@@ -169,7 +184,7 @@ fn demosaicPattern(p: vec2i, size: vec2i) -> vec3f {
 // Cached X-Trans camera RGB: subsequent edits only apply per-pixel linear transforms.
 @fragment fn fs_camera(@builtin(position) position: vec4f) -> @location(0) vec4f {
   let camera = textureLoad(cameraSource, vec2i(position.xy), 0).rgb;
-  return vec4f(calibration.matrix * (camera * calibration.gains) * calibration.exposure, 1.0);
+  return output(calibration.matrix * (camera * calibration.gains) * calibration.exposure);
 }
 
 // One triangle covering the whole destination.
