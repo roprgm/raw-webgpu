@@ -68,7 +68,7 @@ For file export, see the [Bun PNG/JPEG/BMP conversion example](docs/conversion.m
 
 ## Minimal website
 
-`web/` is a fullscreen RAW viewer with no app shader or rendering framework. It currently uses a local link: build the library and run `bun link` at the repository root, then `cd web && bun install && bun run dev`. After publishing the new API, pin that npm version in `web/package.json` for standalone deployment. Build with `bun run build` and serve `web/dist/` over HTTPS. Files stay in the browser. With the dev server running, `bun run test:web` from the repository root checks loading through Vite.
+`web/` is a fullscreen RAW viewer using the published npm package. Run `cd web && bun install && bun run dev`. Build with `bun run build` and serve `web/dist/` over HTTPS. On Vercel, set the root directory to `web`. Files stay in the browser. With the dev server running, `bun run test:web` from the repository root checks loading.
 
 ## API contract and support
 

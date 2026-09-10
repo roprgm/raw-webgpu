@@ -25,3 +25,6 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: npm run prepublishOnly
+      - name: Build demo
+        working-directory: web
+        run: bun install --frozen-lockfile && bun run build
