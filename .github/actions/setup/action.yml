@@ -23,6 +23,16 @@ runs:
         .cache/emsdk/emsdk install 6.0.9
         .cache/emsdk/emsdk activate 6.0.9
         echo "$GITHUB_WORKSPACE/.cache/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+    - name: Cache native build
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: |
+          .cache/native
+          dist/libraw.js
+          dist/libraw.wasm
+        key: ${{ runner.os }}-${{ runner.arch }}-native-v1-${{ hashFiles('native/build.py', 'native/*.patch') }}-${{ hashFiles('native/*.cpp', 'native/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-native-v1-${{ hashFiles('native/build.py', 'native/*.patch') }}-
     - shell: bash
       run: bun install --frozen-lockfile
     - name: Install test renderers
