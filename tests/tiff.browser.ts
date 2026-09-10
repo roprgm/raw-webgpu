@@ -312,6 +312,13 @@ try {
 				Object.defineProperty(limited.limits, "maxStorageBufferBindingSize", {
 					value: 16384,
 				});
+				Object.defineProperty(
+					limited.limits,
+					"maxComputeInvocationsPerWorkgroup",
+					{
+						value: 128,
+					},
+				);
 				Object.defineProperty(limited.limits, "maxBufferSize", {
 					value: 16384,
 				});

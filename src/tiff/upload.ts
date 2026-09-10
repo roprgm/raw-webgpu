@@ -61,6 +61,10 @@ export async function uploadTiff(
 	pixels: TiffPixels,
 	signal?: AbortSignal,
 ) {
+	const workgroupRows = Math.min(
+		16,
+		Math.floor(device.limits.maxComputeInvocationsPerWorkgroup / 16),
+	);
 	let pending = pipelines.get(device);
 	if (!pending) {
 		pending = device
@@ -69,6 +73,7 @@ export async function uploadTiff(
 				compute: {
 					module: device.createShaderModule({ code: shader }),
 					entryPoint: "main",
+					constants: { workgroupRows },
 				},
 			})
 			.catch((error) => {
@@ -136,7 +141,10 @@ export async function uploadTiff(
 				const pass = encoder.beginComputePass();
 				pass.setPipeline(pipeline);
 				pass.setBindGroup(0, bindings);
-				pass.dispatchWorkgroups(Math.ceil(width / 16), Math.ceil(rows / 16));
+				pass.dispatchWorkgroups(
+					Math.ceil(width / 16),
+					Math.ceil(rows / workgroupRows),
+				);
 				pass.end();
 				device.queue.submit([encoder.finish()]);
 			} finally {
