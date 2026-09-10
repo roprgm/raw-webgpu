@@ -438,3 +438,110 @@ test.skipIf(!process.env.GPU)(
 		}
 	},
 );
+
+test.skipIf(!process.env.GPU)(
+	"sRGB output matches display color math without changing linear or cached camera RGB",
+	async () => {
+		const gpu = await init();
+		const pipeline = await createPipeline(gpu.gpu);
+		const mosaic = sensor([0, 1, 3, 2], [12, 12]);
+		// A larger repeating pattern exercises the cached-camera entry point.
+		const tiled = {
+			...mosaic,
+			cfaSize: 6,
+			cfa: Array.from(
+				{ length: 36 },
+				(_, i) => [0, 1, 3, 2][(Math.floor(i / 6) % 2) * 2 + (i % 2)],
+			),
+		};
+		function encode(value: number) {
+			const clipped = Math.min(1, Math.max(0, value));
+			return clipped <= 0.0031308
+				? 12.92 * clipped
+				: 1.055 * clipped ** (1 / 2.4) - 0.055;
+		}
+		try {
+			for (const pixels of [sensor(null), mosaic, tiled]) {
+				const source = createGpuSource(gpu.gpu, pixels, pipeline);
+				try {
+					for (const format of [
+						"rgba16float",
+						"rgba8unorm",
+						"bgra8unorm",
+					] as const) {
+						const image = target(gpu, { size: source.size, format });
+						const pass = source.createDevelopPass({
+							outputColorSpace: "srgb",
+							format,
+						});
+						try {
+							for (const exposure of [-8, 0, 4]) {
+								const gains = [1, 2, 0.5];
+								// Different channel scales verify WB and camera color conversion before encoding.
+								const calibration = {
+									gains,
+									matrix: [1, 0, 0, 0, 0.5, 0, 0, 0, 2],
+								};
+								pass.render({
+									destination: image.color.gpu,
+									calibration,
+									exposure,
+								});
+								const result = await image.readFloats();
+								const expected = [
+									1.660491 * 0.5 - 0.587641 * 0.25 - 0.07285 * 0.125,
+									-0.12455 * 0.5 + 1.1329 * 0.25 - 0.008349 * 0.125,
+									-0.018151 * 0.5 - 0.100579 * 0.25 + 1.11873 * 0.125,
+								].map((v) => encode(v * 2 ** exposure));
+								const center =
+									(Math.floor(source.size[1] / 2) * source.size[0] +
+										Math.floor(source.size[0] / 2)) *
+									4;
+								for (let c = 0; c < 3; c++)
+									expect(
+										Math.abs(result[center + c] - expected[c]),
+									).toBeLessThan(0.004);
+								expect(result[center + 3]).toBe(1);
+							}
+						} finally {
+							pass.dispose();
+							image.color.dispose();
+						}
+					}
+					const image = target(gpu, {
+						size: source.size,
+						format: "rgba16float",
+					});
+					try {
+						const linear = source.createDevelopPass();
+						linear.render({
+							destination: image.color.gpu,
+							calibration: { gains: [1, 1, 1], matrix: identity },
+							exposure: 2,
+						});
+						const result = await image.readFloats();
+						const center =
+							(Math.floor(source.size[1] / 2) * source.size[0] +
+								Math.floor(source.size[0] / 2)) *
+							4;
+						expect(Array.from(result.slice(center, center + 4))).toEqual([
+							2, 1, 0.5, 1,
+						]);
+						expect(() =>
+							source.createDevelopPass({
+								outputColorSpace: "srgb",
+								format: "rgba8unorm-srgb",
+							}),
+						).toThrow("format");
+					} finally {
+						image.color.dispose();
+					}
+				} finally {
+					source.dispose();
+				}
+			}
+		} finally {
+			gpu.dispose();
+		}
+	},
+);

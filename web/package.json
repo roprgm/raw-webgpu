@@ -1,0 +1,18 @@
+{
+	"name": "raw-webgpu-web",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host 127.0.0.1",
+		"build": "tsc --noEmit --strict --skipLibCheck --target esnext --module esnext --moduleResolution bundler --types vite/client,@webgpu/types main.ts && vite build",
+		"preview": "vite preview --host 127.0.0.1"
+	},
+	"dependencies": {
+		"raw-webgpu": "link:raw-webgpu"
+	},
+	"devDependencies": {
+		"vite": "8.2.2",
+		"typescript": "5.9.3",
+		"@webgpu/types": "0.1.72"
+	}
+}

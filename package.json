@@ -28,6 +28,7 @@
 		"test": "bun test",
 		"test:gpu": "GPU=1 bun test",
 		"test:browser": "bun tests/browser.ts",
+		"test:web": "bun tests/web.ts",
 		"build:sdk": "bun build.ts && tsc --emitDeclarationOnly",
 		"test:tiff": "bun tests/tiff.browser.ts",
 		"benchmark:tiff": "bun tests/tiff.browser.ts --benchmark",
