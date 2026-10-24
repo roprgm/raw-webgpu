@@ -5,6 +5,9 @@
 #include <stdexcept>
 
 static void check(int code) {
+    if (code == LIBRAW_FILE_UNSUPPORTED) {
+        throw std::runtime_error("This RAW format isn't supported yet.");
+    }
     if (code) {
         throw std::runtime_error(libraw_strerror(code));
     }
@@ -158,8 +161,7 @@ void prepare_pixels(Raw *source, void *bytes, unsigned length) {
     if (!source->originalOffset) {
         check(raw.unpack());
     }
-    if (raw.imgdata.idata.colors != 3 || raw.imgdata.color.as_shot_wb_applied ||
-        raw.is_floating_point()) {
+    if (raw.imgdata.idata.colors != 3 || raw.is_floating_point()) {
         throw std::runtime_error("This RAW sensor layout is not supported by the GPU pipeline");
     }
 

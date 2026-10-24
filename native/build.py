@@ -15,6 +15,8 @@ NATIVE = Path(__file__).resolve().parent
 PROJECT = NATIVE.parent
 CACHE = Path(os.environ.get("RAW_WEBGPU_CACHE", PROJECT / ".cache/native")).resolve()
 OUTPUT = PROJECT / "dist/libraw.js"
+# LibRaw master after 0.22.2: camera support lands there between releases.
+LIBRAW_COMMIT = "7bfffe2efa508da00c0d8af299c37cd426a4528d"
 
 
 def run(*args):
@@ -32,20 +34,22 @@ def download(name, url, checksum):
 
 def prepare_sources(root):
     raw_archive = download(
-        "libraw.tar.gz",
-        "https://www.libraw.org/data/LibRaw-0.22.2.tar.gz",
-        "de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa",
+        f"libraw-{LIBRAW_COMMIT}.tar.gz",
+        f"https://github.com/LibRaw/LibRaw/archive/{LIBRAW_COMMIT}.tar.gz",
+        "f155da0ae8120935bb3045b417f9da366170467210b2298ff22b95bfb98986e2",
     )
     sdk_archive = download(
         "dng-sdk.zip",
         "https://download.adobe.com/pub/adobe/dng/dng_sdk_1_7_1_2724_20260908.zip",
         "740fbe95c69e09e9cd17654a5e4fef2d7021254b06fd2b8c5557b79a1496b50c",
     )
-    raw = root / "LibRaw-0.22.2"
+    raw = root / f"LibRaw-{LIBRAW_COMMIT}"
     sdk = root / "dng_sdk_1_7_1"
     if not raw.exists():
         with tarfile.open(raw_archive) as archive:
             archive.extractall(root, filter="data")
+        # Cameras newer than LibRaw master: color matrices, an alias, Canon levels, Nikon HE.
+        run("patch", "-d", raw, "-p1", "-i", NATIVE / "libraw-cameras.patch")
     if not sdk.exists():
         with zipfile.ZipFile(sdk_archive) as archive:
             archive.extractall(root)
@@ -192,6 +196,7 @@ def main():
         version.encode()
         + Path(__file__).read_bytes()
         + (NATIVE / "dng-no-xmp.patch").read_bytes()
+        + (NATIVE / "libraw-cameras.patch").read_bytes()
     ).hexdigest()
     root = CACHE / recipe[:16]
     root.mkdir(parents=True, exist_ok=True)
