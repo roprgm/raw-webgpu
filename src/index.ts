@@ -37,7 +37,10 @@ export function createRawDecoder(device: GPUDevice) {
 			if (signal?.aborted) {
 				throw signal.reason;
 			}
-			const session = createSession(compileDecoder());
+			const session = createSession(
+				compileDecoder(),
+				device.limits.maxTextureDimension2D,
+			);
 			let gpuSource: ReturnType<typeof createGpuSource> | undefined;
 			let disposed = false;
 
@@ -68,6 +71,7 @@ export function createRawDecoder(device: GPUDevice) {
 				if (!reply.image) {
 					throw Error("RAW decoder returned no sensor samples.");
 				}
+				// Preparation can change the geometry LibRaw reported, as Fujifilm's rotated layouts do.
 				if (
 					reply.image.size.some(
 						(value) => value > device.limits.maxTextureDimension2D,

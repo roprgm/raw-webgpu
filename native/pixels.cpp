@@ -1,8 +1,10 @@
 #include "direct.h"
 #include "dng_info.h"
 #include "raw.h"
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 static void check(int code) {
     if (code) {
@@ -144,9 +146,16 @@ static void prepare_camera_rgb(Raw *source) {
     source->originalOffset = 0;
 }
 
-void prepare_pixels(Raw *source, void *bytes, unsigned length) {
+void prepare_pixels(Raw *source, void *bytes, unsigned length, unsigned maxSide) {
     auto &raw = source->decoder;
     check(raw.open_buffer(bytes, length));
+    // Opening reads only metadata, so an image too large for the GPU stops before unpacking.
+    const auto &sizes = raw.imgdata.sizes;
+    if (std::max(sizes.width, sizes.height) > maxSide) {
+        throw std::runtime_error("RAW image is " + std::to_string(sizes.width) + " × " +
+                                 std::to_string(sizes.height) + " pixels; this device's textures stop at " +
+                                 std::to_string(maxSide) + ".");
+    }
     source->sensorMosaic = raw.imgdata.idata.filters != 0;
     raw.imgdata.rawparams.options &= ~LIBRAW_RAWOPTIONS_CONVERTFLOAT_TO_INT;
     if (raw.imgdata.idata.dng_version) {

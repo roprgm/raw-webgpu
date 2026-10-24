@@ -127,7 +127,7 @@ static std::string tiffError;
 
 extern "C" {
 
-EMSCRIPTEN_KEEPALIVE Tiff *tiff_open(unsigned length, bool browserDeflate) {
+EMSCRIPTEN_KEEPALIVE Tiff *tiff_open(unsigned length, bool browserDeflate, unsigned maxSide) {
     try {
         dng_host host;
         TiffStream stream(length);
@@ -138,6 +138,12 @@ EMSCRIPTEN_KEEPALIVE Tiff *tiff_open(unsigned length, bool browserDeflate) {
         }
         auto &ifd = *info.fIFD[0];
         ifd.PostParse();
+        if (std::max(ifd.fImageWidth, ifd.fImageLength) > maxSide) {
+            throw std::runtime_error("TIFF is " + std::to_string(ifd.fImageWidth) + " × " +
+                                     std::to_string(ifd.fImageLength) +
+                                     " pixels; this device's textures stop at " +
+                                     std::to_string(maxSide) + ".");
+        }
 
         const unsigned colors = ifd.fPhotometricInterpretation == 2 ? 3 : 1;
         if (ifd.fPhotometricInterpretation > 2 || ifd.fSamplesPerPixel < colors ||

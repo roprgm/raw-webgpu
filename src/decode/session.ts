@@ -1,7 +1,13 @@
 import type { RawReply, WhiteBalance } from "../types";
 
-/** Each source retains one native calibration session in its own worker. */
-export function createSession(compiled: Promise<WebAssembly.Module>) {
+/**
+ * Each source retains one native calibration session in its own worker, which rejects an image
+ * with a side longer than `maxSide` before unpacking it.
+ */
+export function createSession(
+	compiled: Promise<WebAssembly.Module>,
+	maxSide: number,
+) {
 	const worker = new Worker(new URL("./worker.js", import.meta.url), {
 		type: "module",
 	});
@@ -23,7 +29,7 @@ export function createSession(compiled: Promise<WebAssembly.Module>) {
 	compiled.then(
 		(module) => {
 			if (!failure) {
-				worker.postMessage({ module });
+				worker.postMessage({ module, maxSide });
 			}
 		},
 		(error) => dispose(error instanceof Error ? error : Error(String(error))),

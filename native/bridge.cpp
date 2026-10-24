@@ -13,10 +13,10 @@ EMSCRIPTEN_KEEPALIVE const char *raw_error() {
     return error.c_str();
 }
 
-EMSCRIPTEN_KEEPALIVE Raw *raw_open(void *bytes, unsigned length) {
+EMSCRIPTEN_KEEPALIVE Raw *raw_open(void *bytes, unsigned length, unsigned maxSide) {
     try {
         auto source = std::make_unique<Raw>();
-        prepare_pixels(source.get(), bytes, length);
+        prepare_pixels(source.get(), bytes, length, maxSide);
         prepare_calibration(source.get(), bytes, length);
         pack_pixels(source.get());
         return source.release();
