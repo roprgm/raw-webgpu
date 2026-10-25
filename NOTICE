@@ -1,4 +1,4 @@
-The MIT license covers raw-webgpu source and shaders; bundled dependencies retain their own licenses.
+The MIT license covers raw-webgpu source and shaders except native/libraw-cameras.patch, under CDDL 1.0; bundled dependencies retain their own licenses.
 
 raw-webgpu includes LibRaw 0.22.2 plus later upstream commits up to 7bfffe2 (CDDL 1.0), Adobe DNG SDK 1.7.1 build 2724,
 libjxl 0.11.2 and its Brotli, Highway and skcms dependencies, JPEG 9f, zlib 1.3.2,

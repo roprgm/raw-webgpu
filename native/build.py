@@ -49,7 +49,11 @@ def prepare_sources(root):
         with tarfile.open(raw_archive) as archive:
             archive.extractall(root, filter="data")
         # Cameras newer than LibRaw master: color matrices, an alias, Canon levels, Nikon HE.
-        run("patch", "-d", raw, "-p1", "-i", NATIVE / "libraw-cameras.patch")
+        try:
+            run("patch", "-d", raw, "-p1", "-i", NATIVE / "libraw-cameras.patch")
+        except Exception:
+            shutil.rmtree(raw)
+            raise
     if not sdk.exists():
         with zipfile.ZipFile(sdk_archive) as archive:
             archive.extractall(root)

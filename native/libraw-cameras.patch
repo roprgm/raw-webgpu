@@ -1,3 +1,4 @@
+Modifications to LibRaw by raw-webgpu contributors, under CDDL 1.0.
 --- a/src/metadata/canon.cpp
 +++ b/src/metadata/canon.cpp
 @@ -1072,7 +1072,13 @@

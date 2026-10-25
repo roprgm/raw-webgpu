@@ -87,7 +87,7 @@ The API contract applies to 0.1.x. See the benchmark below for tested camera sam
 
 The camera-RGB cache keeps WB edits fast. A 16 MP image retains about 128 MB of RGB plus the 32 MB mosaic; reconstruction temporarily needs another 128 MB texture. That temporary texture is released after submission.
 
-RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental and can have visible color casts. Floating-point RAW input, baked white balance and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
+RAW coverage depends on camera calibration and sensor layout. Missing as-shot multipliers use a reported daylight fallback; Sigma color remains experimental and can have visible color casts. Floating-point RAW input and non-three-color sensors have limitations. CPU-prepared sources cannot expose pre-demosaic edits. There is no GPU denoising, highlight reconstruction or CPU rendering fallback.
 
 TIFF bilevel, palette, float64 and YCbCr JPEG layouts are not supported. Only the first IFD is read, and unsupported or malformed embedded ICC profiles are rejected. Untagged integer TIFF defaults to sRGB; untagged floating-point TIFF is treated as linear sRGB. Images must fit the GPU's texture limits.
 
