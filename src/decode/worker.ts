@@ -7,13 +7,16 @@ const decoder = module.promise.then(instantiateDecoder);
 // The worker keeps one open file so later white balance requests skip decoding.
 let source = 0;
 let asShot: WhiteBalance;
+// The device's largest texture side, sent with the module.
+let maxSide = 0;
 
 type Request = { id: number; value: Blob | WhiteBalance };
 
 self.onmessage = async ({
 	data,
-}: MessageEvent<Request | { module: WebAssembly.Module }>) => {
+}: MessageEvent<Request | { module: WebAssembly.Module; maxSide: number }>) => {
 	if ("module" in data) {
+		maxSide = data.maxSide;
 		module.resolve(data.module);
 		return;
 	}
@@ -38,7 +41,7 @@ self.onmessage = async ({
 					raw._raw_close(source);
 					source = 0;
 				}
-				source = raw._raw_open(pointer, bytes.length);
+				source = raw._raw_open(pointer, bytes.length, maxSide);
 				if (!source) {
 					throw Error(raw.UTF8ToString(raw._raw_error()));
 				}

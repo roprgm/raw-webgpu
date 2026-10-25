@@ -345,6 +345,17 @@ try {
 					);
 				}
 				banded.dispose();
+				// The native decoder rejects a side over the texture limit before reading pixels.
+				Object.defineProperty(limited.limits, "maxTextureDimension2D", {
+					value: 8,
+				});
+				const oversized = await decodeTiff(limited, bandedFile).then(
+					() => "",
+					(error: Error) => error.message,
+				);
+				if (!oversized.startsWith("TIFF is ")) {
+					throw Error(`TIFF over the texture limit opened: ${oversized}`);
+				}
 				limited.destroy();
 
 				const testDevice = await (

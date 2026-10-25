@@ -35,7 +35,11 @@ export async function decodeTiff(
 			};
 			worker.onmessageerror = () =>
 				reject(Error("Could not read TIFF worker response."));
-			worker.postMessage({ file, module });
+			worker.postMessage({
+				file,
+				module,
+				maxSide: device.limits.maxTextureDimension2D,
+			});
 		});
 		const pixels = await Promise.race([decoded, aborted.promise]);
 		const uploading = uploadTiff(device, pixels, signal).then((image) => {

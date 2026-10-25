@@ -40,7 +40,7 @@ struct Raw {
     }
 };
 
-void prepare_pixels(Raw *source, void *bytes, unsigned length);
+void prepare_pixels(Raw *source, void *bytes, unsigned length, unsigned maxSide);
 void pack_pixels(Raw *source);
 void prepare_dng_pixels(Raw *source, void *bytes, unsigned length);
 void prepare_calibration(Raw *source, void *bytes, unsigned length);
