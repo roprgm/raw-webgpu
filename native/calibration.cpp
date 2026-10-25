@@ -35,6 +35,7 @@ static void read_vignette(Raw *source, const dng_opcode &opcode) {
 
 void prepare_calibration(Raw *source, void *bytes, unsigned length) {
     auto &raw = source->decoder;
+    const auto &color = raw.imgdata.color;
     source->negative.Reset(source->host.Make_dng_negative());
 
     if (source->info) {
@@ -77,10 +78,20 @@ void prepare_calibration(Raw *source, void *bytes, unsigned length) {
         source->negative->SetColorChannels(3);
         AutoPtr<dng_camera_profile> profile(new dng_camera_profile);
         dng_matrix matrix(3, 3);
+        bool known = false;
         for (int row = 0; row < 3; ++row) {
-            for (int col = 0; col < 3; ++col) {
-                matrix[row][col] = raw.imgdata.color.cam_xyz[row][col];
+            // Samples LibRaw got white balanced are the sensor's times the as-shot multipliers.
+            double gain = color.as_shot_wb_applied ? color.cam_mul[row] / color.cam_mul[1] : 1;
+            if (!(gain > 0) || !std::isfinite(gain)) {
+                throw std::runtime_error("RAW file has no usable white balance calibration");
             }
+            for (int col = 0; col < 3; ++col) {
+                matrix[row][col] = color.cam_xyz[row][col] * gain;
+                known |= matrix[row][col] != 0;
+            }
+        }
+        if (!known) {
+            throw std::runtime_error("This camera isn't supported yet.");
         }
         profile->SetColorMatrix1(matrix);
         profile->SetCalibrationIlluminant1(21); // D65 calibration in LibRaw camera tables.
@@ -94,7 +105,8 @@ void prepare_calibration(Raw *source, void *bytes, unsigned length) {
         dng_vector neutral(source->color->Channels());
         bool valid = true;
         for (unsigned c = 0; c < neutral.Count(); ++c) {
-            float multiplier = raw.imgdata.color.cam_mul[c];
+            // Balanced samples are neutral as shot.
+            float multiplier = color.as_shot_wb_applied ? 1 : color.cam_mul[c];
             valid &= multiplier > 0 && std::isfinite(multiplier);
             neutral[c] = multiplier > 0 ? 1.0 / multiplier : 1.0;
         }
@@ -102,7 +114,7 @@ void prepare_calibration(Raw *source, void *bytes, unsigned length) {
             // LibRaw supplies daylight multipliers when the file has no usable camera neutral.
             source->daylightBalance = true;
             for (unsigned c = 0; c < neutral.Count(); ++c) {
-                float multiplier = raw.imgdata.color.pre_mul[c];
+                float multiplier = color.pre_mul[c];
                 if (!(multiplier > 0) || !std::isfinite(multiplier)) {
                     throw std::runtime_error("RAW file has no usable white balance calibration");
                 }

@@ -1,0 +1,109 @@
+Modifications to LibRaw by raw-webgpu contributors, under CDDL 1.0.
+--- a/src/metadata/canon.cpp
++++ b/src/metadata/canon.cpp
+@@ -1072,7 +1072,13 @@
+     INT64 offsetWhiteLevels = 0L;
+     INT64 save1 = ftell(ifp);
+ 
+-    switch (len)
++    // PowerShot V1 and R6 Mark III (ColorDataSubVer 65, 66) store the R1 layout in 3778 words.
++    unsigned layout = len;
++    if (len == 3778 && get2() >= 64)
++      layout = 4528;
++    fseek(ifp, save1, SEEK_SET);
++
++    switch (layout)
+     {
+ 
+     case 582:
+--- a/src/metadata/normalize_model.cpp
++++ b/src/metadata/normalize_model.cpp
+@@ -557,7 +557,7 @@
+     "@DMC-ZS50", "DMC-TZ70", "DMC-TZ71",
+     "@DMC-ZS60", "DMC-TZ80", "DMC-TZ81", "DMC-TZ82", "DMC-TZ85",
+     "@DC-ZS70", "DC-TZ90", "DC-TZ91", "DC-TZ92", "DC-TZ93",
+-    "@DC-ZS80", "DC-TZ95", "DC-TZ96", "DC-TZ97",
++    "@DC-ZS80", "DC-TZ95", "DC-TZ95D", "DC-TZ96", "DC-TZ97",
+ 
+ // interchangeable lens
+     "@DC-G100",  "DC-G110",
+--- a/src/metadata/tiff.cpp
++++ b/src/metadata/tiff.cpp
+@@ -2271,9 +2271,7 @@
+       {
+         load_raw = &LibRaw::nikon_load_padded_packed_raw;
+       }
+-      else if ((!strncmp(model, "NIKON Z 9", 9) || !strncmp(model, "NIKON Z 8", 9) || !strcmp(model, "NIKON Z f")
+-		  || !strcmp(model, "NIKON Z6_3")) &&
+-               tiff_ifd[raw].offset)
++      else if (tiff_ifd[raw].offset) // Any Nikon model may write High Efficiency (JPEG XS) NEF
+       {
+           INT64 pos = ftell(ifp);
+           unsigned char cmp[] = {0xff, 0x10, 0xff, 0x50 }; // JpegXS SOC + Cap
+--- a/src/tables/colordata.cpp
++++ b/src/tables/colordata.cpp
+@@ -159,6 +159,8 @@
+ 
+ 	{ LIBRAW_CAMERAMAKER_Canon, "EOS R5", 0, 0,
+ 	  { 9766,-2953,-1254,-4276,12116,2433,-437,1336,5131 } }, // same CMs: "EOS R5", "EOS R5 C"
++	{ LIBRAW_CAMERAMAKER_Canon, "EOS R6 Mark III", 0, 0, // before its "EOS R6 Mark II" prefix
++	  { 8309,-1786,-1095,-4851,12736,2353,-956,1911,5534 } },
+ 	{ LIBRAW_CAMERAMAKER_Canon, "EOS R6 Mark II", 0, 0,
+ 	  { 9539, -2795, -1224, -4175, 11998, 2458, -465, 1755,6048 } },
+ 	{ LIBRAW_CAMERAMAKER_Canon, "EOS R6", 0, 0,
+@@ -356,6 +358,8 @@
+ 	  { 13898,-5076,-1447,-1405,10109,1297,-244,1860,3687 } }, /* DJC */
+ 	{ LIBRAW_CAMERAMAKER_Canon, "PowerShot SX710 HS", 0, 0,
+ 	  { 13161,-5451,-1344,-1989,10654,1531,-47,1271,4955 } },
++	{ LIBRAW_CAMERAMAKER_Canon, "PowerShot V1", 0, 0,
++	  { 12600,-4747,-2027,-6110,15868,-29,110,479,6011 } },
+ 
+ 	{ LIBRAW_CAMERAMAKER_Canon, "PowerShot Pro1", 0, 0,
+ 	  { 10062,-3522,-1000,-7643,15117,2730,-765,817,7322 } },
+@@ -413,6 +417,8 @@
+ 	{ LIBRAW_CAMERAMAKER_Fujifilm, "F900EXR", 0, 0,
+ 	  { 12085,-4727,-953,-3257,11489,2002,-511,2046,4592 } },
+ 
++	{ LIBRAW_CAMERAMAKER_Fujifilm, "GFX100RF", 0, 0,
++	  { 12806,-5779,-1110,-3546,11507,2318,-177,996,5715 } },
+ 	  { LIBRAW_CAMERAMAKER_Fujifilm, "GFX 100S II", 0, 0,
+ 		{ 12806,-5779,-1110,-3546,11507,2318,-177,996,5715 } },
+ 	{ LIBRAW_CAMERAMAKER_Fujifilm, "GFX 100 II", 0, 0,
+@@ -532,6 +538,8 @@
+ 	  { 11434,-4948,-1210,-3746,12042,1903,-666,1479,5235 } },
+ 	{ LIBRAW_CAMERAMAKER_Fujifilm, "X-E4", 0, 0,
+ 	  { 13426, -6334, -1177, -4244, 12136, 2371, -580, 1303, 5980 } },
++	{ LIBRAW_CAMERAMAKER_Fujifilm, "X-E5", 0, 0,
++	  { 11809,-5358,-1141,-4248,12164,2343,-514,1097,5848 } },
+ 	{ LIBRAW_CAMERAMAKER_Fujifilm, "X-H1", 0, 0,
+ 	  { 11434,-4948,-1210,-3746,12042,1903,-666,1479,5235 } },
+ 	{ LIBRAW_CAMERAMAKER_Fujifilm, "X-H2S", 0, 0,
+@@ -911,6 +919,8 @@
+       { 8198,-2239,-724,-4871,12389,2798,-1043,2050,7181 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "COOLPIX P1000", 0, 0,
+       { 14294,-6116,-1333,-1628,10219,1637,-14,1158,5022 } },
++    { LIBRAW_CAMERAMAKER_Nikon, "COOLPIX P1100", 0, 0,
++      { 14294,-6116,-1333,-1628,10219,1637,-14,1158,5022 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "COOLPIX P6000", 0, 0,
+       { 9698,-3367,-914,-4706,12584,2368,-837,968,5801 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "COOLPIX P7000", 0, 0,
+@@ -1035,6 +1045,10 @@
+       { 11640,-4829,-1079,-5107,13006,2325,-972,1711,7380 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "Z 5", 0, 0,
+       { 8695,-2558,-648,-5015,12711,2575,-1279,2215,7514 } },
++    { LIBRAW_CAMERAMAKER_Nikon, "Z5_2", 0, 0,
++      { 9874,-3784,-823,-4728,12673,2286,-648,1513,6375 } },
++    { LIBRAW_CAMERAMAKER_Nikon, "Z50_2", 0, 0,
++      { 11640,-4829,-1079,-5107,13006,2325,-972,1711,7380 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "Z6_3", 0, 0, // no space after 'Z' !
+       { 11206, -4286,  -941, -4879, 12847,  2251,  -745,  1654,  7374 } },
+     { LIBRAW_CAMERAMAKER_Nikon, "Z 6", 0, 0,
+@@ -1200,6 +1214,8 @@
+ 
+ 	  { LIBRAW_CAMERAMAKER_Olympus, "OM-1", 0, 0,
+       { 9488, -3984, -714, -2887, 10945, 2229, -137, 960, 5786 } },
++    { LIBRAW_CAMERAMAKER_Olympus, "OM-3", 0, 0,
++      { 9090,-3591,-756,-3252,11396,2109,-318,1059,5606 } },
+     { LIBRAW_CAMERAMAKER_Olympus, "OM-5", 0, 0,
+       { 11896, -5110, -1076, -3181, 11378,  2048,  -519,  1224,  5166 } },
+ 

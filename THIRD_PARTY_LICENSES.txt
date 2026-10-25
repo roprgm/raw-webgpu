@@ -5,7 +5,7 @@ LibRaw is distributed under CDDL 1.0. Exact upstream source and rebuild instruct
 
 
 ========================================================================
-LibRaw 0.22.2 — CDDL distribution
+LibRaw 0.22.2 with upstream commits up to 7bfffe2 — CDDL distribution
 ========================================================================
 
  ** LibRaw: Raw images processing library **
