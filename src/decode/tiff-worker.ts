@@ -2,10 +2,17 @@ import { tiffColor } from "../tiff/color";
 import { readStrips } from "../tiff/strips";
 import { instantiateDecoder } from "./instantiate";
 
-/** Decodes one TIFF per worker; see TiffPixels in ../tiff/upload.ts for the reply layout. */
+/**
+ * Decodes one TIFF per worker, rejecting one with a side longer than `maxSide` before reading its
+ * pixels; see TiffPixels in ../tiff/upload.ts for the reply layout.
+ */
 self.onmessage = async ({
-	data: { file, module },
-}: MessageEvent<{ file: Blob; module: WebAssembly.Module }>) => {
+	data: { file, module, maxSide },
+}: MessageEvent<{
+	file: Blob;
+	module: WebAssembly.Module;
+	maxSide: number;
+}>) => {
 	try {
 		const raw = await instantiateDecoder(module);
 
@@ -19,6 +26,7 @@ self.onmessage = async ({
 			source = raw._tiff_open(
 				bytes.length,
 				typeof DecompressionStream !== "undefined",
+				maxSide,
 			);
 			if (!source) {
 				throw Error(raw.UTF8ToString(raw._tiff_error()));

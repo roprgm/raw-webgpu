@@ -89,9 +89,6 @@ export async function uploadTiff(
 	const [width, height, , , , orientation, , , rowBytes] = metadata;
 	const size: [number, number] =
 		orientation >= 5 ? [height, width] : [width, height];
-	if (size.some((value) => value > device.limits.maxTextureDimension2D)) {
-		throw Error("TIFF exceeds the device texture size limit.");
-	}
 	// Large images are converted in bands, each sized to fit one storage buffer.
 	const rowsPerBand = Math.floor(
 		Math.min(

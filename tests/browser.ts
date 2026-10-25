@@ -232,7 +232,10 @@ try {
 				source.dispose();
 				return false;
 			},
-			(error: Error) => error.message.includes("texture size limit"),
+			// The native message shows the check ran before unpacking.
+			(error: Error) =>
+				error.message ===
+				"RAW image is 128 × 96 pixels; this device's textures stop at 64.",
 		);
 		limitedDecoder.dispose();
 		limitedDevice.destroy();

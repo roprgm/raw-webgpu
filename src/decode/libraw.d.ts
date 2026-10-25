@@ -9,7 +9,7 @@ export type LibRaw = {
 	_free(pointer: number): void;
 
 	// native/bridge.cpp
-	_raw_open(pointer: number, size: number): number;
+	_raw_open(pointer: number, size: number, maxSide: number): number;
 	_raw_error(): number;
 	_raw_calibration(source: number, temperature: number, tint: number): number;
 	_raw_width(source: number): number;
@@ -33,7 +33,7 @@ export type LibRaw = {
 
 	// native/tiff.cpp
 	tiffBytes?: Uint8Array;
-	_tiff_open(size: number, browserDeflate: boolean): number;
+	_tiff_open(size: number, browserDeflate: boolean, maxSide: number): number;
 	_tiff_error(): number;
 	_tiff_metadata(source: number): number;
 	_tiff_big_endian(source: number): number;
