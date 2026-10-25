@@ -71,7 +71,7 @@ export function createRawDecoder(device: GPUDevice) {
 				if (!reply.image) {
 					throw Error("RAW decoder returned no sensor samples.");
 				}
-				// Preparation can change the geometry LibRaw reported, as Fujifilm's rotated layouts do.
+				// DNG stage 3 and pixel-aspect stretch can exceed the size open_buffer reported.
 				if (
 					reply.image.size.some(
 						(value) => value > device.limits.maxTextureDimension2D,
